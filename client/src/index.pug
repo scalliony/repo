@@ -1,0 +1,11 @@
+doctype html
+html
+  head
+    title Scalliony
+    link(rel="stylesheet" href="style.styl")
+  body
+    h1 Scalliony
+    input#code(type="file" name="code" accept=".wasm,.wat,application/wasm,text/plain")
+    button#compile Compile
+    button#spawn(disabled) Spawn ?
+    script(type="module" src="main.js")

@@ -1,0 +1,13 @@
+{
+    "private": true,
+    "name": "@scalliony/server",
+    "version": "0.1.0",
+    "license": "MIT",
+    "scripts": {
+        "build": "cargo build --release",
+        "build:dev": "cargo build",
+        "start": "cargo run --release",
+        "start:dev": "cargo run",
+        "test": "cargo test"
+    }
+}

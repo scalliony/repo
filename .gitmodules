@@ -1,0 +1,3 @@
+[submodule "api/rust/template"]
+	path = api/rust/template
+	url = git@github.com:scalliony/rust-template.git

@@ -1,0 +1,11 @@
+{
+    "private": true,
+    "workspaces": ["*"],
+    "scripts": {
+        "build": "yarn workspaces run build",
+        "build:dev": "yarn workspaces run build:dev",
+        "start": "yarn build && yarn workspace @scalliony/server run start",
+        "start:dev": "yarn build:dev && yarn workspace @scalliony/server run start:dev",
+        "test": "yarn workspaces run test"
+    }
+}

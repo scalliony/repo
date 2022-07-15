@@ -1,0 +1,25 @@
+{
+    "name": "@scalliony/client",
+    "version": "0.1.0",
+    "license": "MIT",
+    "source": "src/index.pug",
+    "targets": {
+        "default": {
+            "publicUrl": "/assets/"
+        }
+    },
+    "scripts": {
+        "prebuild": "$npm_execpath install --check-files && rimraf dist",
+        "build": "parcel build --no-source-maps",
+        "build:dev": "parcel build --no-optimize",
+        "lint": "eslint src --ext .js,.ts",
+        "test": "mocha -r ts-node/register -r tsconfig-paths/register test/**/*Test.ts"
+    },
+    "dependencies": {},
+    "devDependencies": {
+        "parcel": "^2.6.2",
+        "@parcel/transformer-pug": "2.6.2",
+        "@parcel/transformer-stylus": "2.6.2",
+        "rimraf": "^3.0.2"
+    }
+}

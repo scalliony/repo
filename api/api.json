@@ -1,0 +1,41 @@
+{
+    "version": "0.1.0",
+    "export": {
+        "io": {
+            "log": {
+                "kind": "func",
+                "params": ["i32", "i32"],
+                "returns": [],
+                "desc": "Output a log message\nParams refer to a string(ptr, len as u32)\nDelayed"
+            }
+        },
+        "motor": {
+            "rotate": {
+                "kind": "func",
+                "params": ["i32"],
+                "returns": [],
+                "desc": "Change rotation relatively\nTurn left if param is negative else right"
+            },
+            "move": {
+                "kind": "func",
+                "params": ["i32"],
+                "return": [],
+                "desc": "Plan to move forward (depending of rotation) of p0 cells\nValue under 1 produces an error log\nDelayed"
+            }
+        },
+        "sensors":{
+            "contact": {
+                "kind": "func",
+                "params": [],
+                "return": ["i64", "i32"],
+                "desc": "Check for entity just in front (depending of rotation)\nReturns entity's (id, type) or (-1, -1) if nothing is in contact"
+            },
+            "contact_s": {
+                "kind": "func",
+                "params": [],
+                "return": ["i32"],
+                "desc": "Same as contact but returning entity (i64, i32) to provided ptr address"
+            }
+        }
+    }
+}
