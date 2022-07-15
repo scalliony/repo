@@ -1,0 +1,30 @@
+{
+    "name": "@scalliony/web",
+    "version": "0.1.0",
+    "license": "MIT",
+    "source": "src/index.pug",
+    "targets": {
+        "default": {
+            "publicUrl": "/assets/"
+        }
+    },
+    "scripts": {
+        "prebuild": "$npm_execpath install --check-files --no-audit --no-fund",
+        "build": "parcel build --no-source-maps",
+        "build:dev": "parcel build --no-optimize",
+        "watch": "parcel watch",
+        "lint": "eslint src --ext .js,.ts",
+        "test": "mocha -r ts-node/register -r tsconfig-paths/register test/**/*Test.ts"
+    },
+    "devDependencies": {
+        "@parcel/transformer-pug": "2.6.2",
+        "@parcel/transformer-stylus": "2.6.2",
+        "honeycomb-grid": "^3.1.8",
+        "parcel": "^2.6.2",
+        "parcel-reporter-clean-dist": "^1.0.4",
+        "pixi-viewport": "^4.34.4",
+        "pixi.js": "^6.5.1",
+        "querystring-es3": "^0.2.1",
+        "yy-fps": "^2.0.0"
+    }
+}

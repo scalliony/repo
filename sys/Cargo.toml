@@ -1,0 +1,27 @@
+[package]
+name = "scalliony-sys"
+version = "0.1.0"
+description = "Scalliony native system binding"
+categories = ["games", "wasm"]
+keywords = ["game", "wasm", "webassembly", "engine", "lib"]
+edition = "2021"
+homepage = "https://scalliony.wadza.fr"
+license = "MIT"
+repository = "https://github.com/scalliony/repo"
+
+[features]
+default = []
+cache = ["wasmtime/cache"]
+
+[dependencies]
+anyhow = "1"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+js-sys = "0.3"
+wasm-instrument = "0.2"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# Exclude cache since ztd-sys is a bit heavy
+wasmtime = { version = "0.40", default-features = false, features = ["cranelift", "wat", "parallel-compilation", "pooling-allocator", "memory-init-cow"] }
+wasmtime-wasi = "0.40"
+wasi-common = "0.40"

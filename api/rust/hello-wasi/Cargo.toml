@@ -1,0 +1,9 @@
+[package]
+name = "hello-wasi"
+version = "0.1.0"
+edition = "2021"
+publish = false
+# default-target = "wasm32-wasi"
+
+[dependencies]
+scalliony-api = { path = "../api", version = "0.1" }

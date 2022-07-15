@@ -1,0 +1,35 @@
+[package]
+name = "scalliony-server"
+version = "0.1.0"
+description = "Scalliony programming game server"
+categories = ["games", "wasm", "web-programming"]
+keywords = ["game", "wasm", "webassembly", "web", "engine"]
+edition = "2021"
+homepage = "https://scalliony.wadza.fr"
+license = "MIT"
+repository = "https://github.com/scalliony/repo"
+
+[features]
+log-tree = ["tracing-forest"]
+
+[dependencies]
+engine = { package = "scalliony-engine", path = "../engine", version = "0.1.0", features = ["serde"] }
+axum = { version = "0.5", features = ["ws", "headers"] }
+axum-extra = { version = "0.3", features = ["spa", "typed-routing", "cookie"] }
+futures = "0.3"
+serde = "1"
+serde_json = "1"
+oauth2 = "4.2"
+reqwest = { version = "0.11", default-features = false, features = ["rustls-tls", "json"] }
+tokio = { version = "1", features = ["full"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+tower = "0.4"
+tower-http = { version = "0.3", features = ["trace", "request-id"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = { version = "0.2", features = ["parking_lot"] }
+tracing-forest = { version = "0.1", optional = true }
+jsonwebtoken = "8.1"
+dotenv = "0.15"
+chrono = "0.4"
+lazy_static = "1.4"

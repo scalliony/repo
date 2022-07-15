@@ -1,0 +1,11 @@
+[package]
+name = "scalliony-api"
+version = "0.1.0"
+description = "Scalliony programming game bot api library"
+categories = ["game-development", "wasm", "development-tools", "api-bindings"]
+keywords = ["game", "wasm", "webassembly", "lib"]
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/scalliony/repo"
+
+[lib]

@@ -1,0 +1,1 @@
+clang --target=wasm32 --no-standard-libraries -Iinclude -O3 -Wl,--export="_start" -Wl,--export="run" -Wl,--allow-undefined -Wl,--no-entry -o out.wasm $@

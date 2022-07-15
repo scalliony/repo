@@ -1,0 +1,33 @@
+{
+    "version": "0.1.0",
+    "export": {
+        "io": {
+            "log": {
+                "kind": "func",
+                "params": ["i32", "i32"],
+                "desc": "Output a log message\nParams refer to a string(ptr, len as u32)"
+            }
+        },
+        "motor": {
+            "forward": {
+                "kind": "func",
+                "desc": "Plan to move forward (depending of rotation) of one cell\nAction"
+            },
+            "left": {
+                "kind": "func",
+                "desc": "Change rotation left relative to current\nAction"
+            },
+            "right": {
+                "kind": "func",
+                "desc": "Change rotation right relative to current\nAction"
+            }
+        },
+        "sensors":{
+            "contact": {
+                "kind": "func",
+                "return": ["i32"],
+                "desc": "Check if there is something blocking cell just in front (depending of rotation)\nAs bool"
+            }
+        }
+    }
+}

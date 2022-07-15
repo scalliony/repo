@@ -1,0 +1,19 @@
+[package]
+name = "scalliony-engine"
+version = "0.1.0"
+description = "Scalliony programming game core library"
+categories = ["game-development", "wasm"]
+keywords = ["game", "wasm", "webassembly", "engine", "lib"]
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/scalliony/repo"
+
+[dependencies]
+sys = { path = "../sys", package = "scalliony-sys", version = "0.1.0" }
+bulb = { path = "../bulb", package = "scalliony-bulb", version = "0.1.0" }
+tracing = "0.1"
+typed-index-collections = "3"
+chrono = "0.4"
+
+[features]
+serde = ["bulb/serde"]

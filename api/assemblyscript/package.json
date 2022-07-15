@@ -1,0 +1,16 @@
+{
+  "name": "scalliony-template",
+  "version": "0.1.0",
+  "description": "AssemblyScript template for Scalliony",
+  "main": "lib.ts",
+  "scripts": {
+    "build": "asc ${LIB:-lib.ts} -O --use abort= -b build/out.wasm",
+    "build-wat": "asc ${LIB:-lib.ts} -O --use abort= -t build/out.wat",
+    "test": "node tests"
+  },
+  "license": "MIT",
+  "dependencies": {},
+  "devDependencies": {
+    "assemblyscript": "^0.18.4"
+  }
+}
