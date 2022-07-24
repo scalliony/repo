@@ -10,13 +10,13 @@ use tokio::sync::{broadcast, mpsc};
 use tracing::instrument;
 use typed_index_collections::TiVec;
 
-pub fn run() -> InterfaceRef {
+pub fn run(paused: bool) -> InterfaceRef {
     let (commands_tx, commands_rx) = mpsc::unbounded_channel();
     let (events_tx, events_rx) = broadcast::channel(128);
 
     let thread = thread::Builder::new()
         .name("game-master".into())
-        .spawn(move || Game::new(commands_rx, events_tx).run())
+        .spawn(move || Game::new(commands_rx, events_tx, paused).run())
         .unwrap();
 
     std::sync::Arc::new(Interface {
@@ -56,14 +56,25 @@ struct Game {
     bots: gen::Array<BotId, Bot>,
 }
 impl Game {
-    fn new(commands: mpsc::UnboundedReceiver<Command>, events: broadcast::Sender<Event>) -> Self {
+    fn new(
+        commands: mpsc::UnboundedReceiver<Command>,
+        events: broadcast::Sender<Event>,
+        paused: bool,
+    ) -> Self {
+        let state = if paused {
+            tracing::warn!("game is paused");
+            State::Paused
+        } else {
+            State::Running
+        };
+
         let vm = VM::new();
         //TODO: vm.add_func("io", "log", func: impl IntoFunc<T, Params, Args>);
 
         Self {
             commands,
             events: EventSender(events),
-            state: State::Running,
+            state,
             counter: 0,
             vm,
             programs: TiVec::new(),
@@ -116,6 +127,7 @@ impl Game {
         }
 
         self.events.send(Event::TickEnd);
+        tracing::debug!("done");
     }
 
     #[inline]

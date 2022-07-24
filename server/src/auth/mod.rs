@@ -4,22 +4,23 @@ use axum::{
     extract::{FromRequest, Path, Query, TypedHeader},
     headers,
     http::StatusCode,
-    response::{IntoResponse, Redirect, Response},
+    response::{Html, IntoResponse, Redirect, Response},
     routing::get,
     Extension, Json, Router,
 };
 use axum_extra::extract::cookie::{Cookie, CookieJar};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::{fmt, collections::HashMap};
 
-pub fn router() -> Router {
-    Router::new()
+pub fn nest(router: Router, path: &str) -> Router {
+    let inner = Router::new()
         .route("/", get(list))
+        .route("/html", get(list_html))
         .route("/logout", get(logout))
         .route("/login/:provider", get(login))
         .route("/callback/:provider", get(callback))
-        .route("/whoami", get(whoami))
-        .layer(Extension(State::new_ref()))
+        .route("/whoami", get(whoami));
+    router.nest(path, inner).layer(Extension(State::new_ref()))
 }
 
 struct State {
@@ -39,35 +40,42 @@ impl State {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Claims {
     iss: String,
     id: String,
     exp: i64,
 }
-impl Claims {
-    pub fn id(self) -> String {
-        let mut inner = self.iss.clone();
-        inner.push(':');
-        inner.push_str(&self.id);
-        inner
+impl fmt::Display for Claims {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}:{}", self.iss, self.id)
     }
 }
+pub use axum_extra::extract::Cached as Get;
+pub type User = Get<Claims>;
 
 static COOKIE_NAME: &str = "SCALLION";
+fn new_cookie<'c, V>(value: V) -> Cookie<'c>
+where
+    V: Into<std::borrow::Cow<'c, str>>,
+{
+    Cookie::build(COOKIE_NAME, value).path("/").http_only(true).permanent().finish()
+}
 
 pub struct AuthRejection;
 impl IntoResponse for AuthRejection {
     fn into_response(self) -> Response {
-        (StatusCode::UNAUTHORIZED, Json("Wrong credentials")).into_response()
+        (StatusCode::UNAUTHORIZED, Json(ErrObj { err: "Wrong credentials" })).into_response()
     }
 }
+#[derive(Serialize)]
+struct ErrObj { err: &'static str }
+
 #[axum::async_trait]
 impl<B> FromRequest<B> for Claims
 where
     B: Send,
 {
-    // If anything goes wrong or no session is found, redirect to the auth page
     type Rejection = AuthRejection;
 
     async fn from_request(
@@ -90,15 +98,23 @@ where
 }
 
 async fn list(Extension(state): Extension<StateRef>) -> impl IntoResponse {
-    Json::<Vec<String>>(state.providers.keys().map(|s| s.to_owned()).collect())
+    Json::<Vec<_>>(state.providers.keys().map(|s| s.to_owned()).collect())
+}
+async fn list_html(Extension(state): Extension<StateRef>) -> impl IntoResponse {
+    Html(
+        state
+            .providers
+            .keys()
+            .fold(String::new(), |acc, s| acc + "<a href=\"./login/" + s + "\">" + s + "</a>&nbsp"),
+    )
 }
 
 async fn logout(jar: CookieJar) -> impl IntoResponse {
-    (jar.remove(Cookie::named(COOKIE_NAME)), Redirect::to("/"))
+    (jar.remove(new_cookie("")), Redirect::to("/"))
 }
 
 async fn whoami(claims: Claims) -> impl IntoResponse {
-    Json(claims.id())
+    Json(claims.to_string())
 }
 
 async fn login(
@@ -106,7 +122,7 @@ async fn login(
     Extension(state): Extension<StateRef>,
 ) -> impl IntoResponse {
     if let Some(provider) = state.as_ref().providers.get(&name) {
-        let (auth_url, csrf_token) = provider.authorize_url();
+        let (auth_url, _csrf_token) = provider.authorize_url();
         //FIXME: store csrf
         Redirect::to(auth_url.as_ref()).into_response()
     } else {
@@ -143,7 +159,7 @@ async fn callback(
             .encode(&Claims { iss: user.provider, id: user.id, exp: user.expires.timestamp() })
             .unwrap();
 
-        (jar.add(Cookie::new(COOKIE_NAME, jwt)), Redirect::to("/")).into_response()
+        (jar.add(new_cookie(jwt)), Redirect::to("/")).into_response()
     } else {
         StatusCode::NOT_FOUND.into_response()
     }

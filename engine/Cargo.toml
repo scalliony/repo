@@ -1,0 +1,24 @@
+[package]
+name = "scalliony-engine"
+version = "0.1.0"
+description = "Scalliony programming game core library"
+categories = ["game-development", "wasm"]
+keywords = ["game", "wasm", "webassembly", "engine", "lib"]
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/scalliony/repo"
+
+[dependencies]
+wasmtime = "0.39"
+wasmtime-wasi = "0.39"
+wasi-common = "0.39"
+anyhow = "1"
+tracing = "0.1"
+derive_more = "0.99"
+typed-index-collections = "3"
+chrono = "0.4"
+bytes = "1"
+# MAYBE: use callback
+tokio = { version = "1", features = ["sync"] }
+# MAYBE: under feature
+serde = "1"

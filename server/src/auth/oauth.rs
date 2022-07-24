@@ -67,18 +67,20 @@ impl Provider {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone)]
 enum Introspector {
     Github,
 }
 impl Introspector {
+    #[tracing::instrument(name = "introspect", skip(token))]
     async fn call(
         self,
         token: StandardTokenResponse<oauth2::EmptyExtraTokenFields, oauth2::basic::BasicTokenType>,
     ) -> Result<UserData, Error> {
         match self {
             Introspector::Github => {
-                let client = reqwest::Client::new();
+                let client =
+                    reqwest::Client::builder().user_agent(env!("CARGO_PKG_NAME")).build().unwrap();
                 let user_request = client
                     .get("https://api.github.com/user")
                     .bearer_auth(token.access_token().secret())
@@ -113,11 +115,7 @@ impl Introspector {
                         .ok_or(Error::Unauthorized)?
                         .email
                         .clone(),
-                    expires: Utc::now()
-                        .checked_add_signed(chrono::Duration::seconds(
-                            token.expires_in().map_or(1, |d| d.as_secs().try_into().unwrap()),
-                        ))
-                        .unwrap(),
+                    expires: Utc::now() + chrono::Duration::weeks(3),
                 })
             }
         }

@@ -1,4 +1,5 @@
 mod dto;
+use crate::auth;
 use crate::game::{Command as Cmd, Event as Ev, InterfaceRef};
 use axum::{
     body::Bytes,
@@ -7,6 +8,7 @@ use axum::{
         Query, WebSocketUpgrade,
     },
     http::StatusCode,
+    middleware::from_extractor,
     response::{
         sse::{self, Sse},
         IntoResponse, Json,
@@ -16,16 +18,24 @@ use axum::{
 };
 use dto::*;
 use futures::{stream::Stream, SinkExt};
-use std::convert::Infallible;
+use lazy_static::lazy_static;
+use std::{collections::HashSet, convert::Infallible};
 use tokio_stream::{wrappers::BroadcastStream, StreamExt as _};
 use tracing::Instrument;
 
+lazy_static! {
+    static ref ADMIN: HashSet<String> =
+        std::env::var("API_ADMIN").unwrap_or_default().split(',').map(|s| s.to_owned()).collect();
+}
+
 pub fn router(interface: InterfaceRef) -> Router {
+    tracing::info!("found {} admins", ADMIN.len());
     Router::new()
         .route("/compile", post(compile))
         .route("/spawn", post(spawn))
         .route("/sse", get(sse))
         .route("/ws", get(ws_upgrade))
+        .route_layer(from_extractor::<auth::User>())
         .layer(Extension(interface))
 }
 
@@ -46,16 +56,17 @@ async fn spawn(
 async fn ws_upgrade(
     socket: WebSocketUpgrade,
     Extension(interface): Extension<InterfaceRef>,
+    auth::Get(user): auth::User,
 ) -> impl IntoResponse {
-    let span = tracing::debug_span!("ws");
-    socket.on_upgrade(|socket| ws(socket, interface).instrument(span))
+    let span = tracing::debug_span!("ws", %user);
+    socket.on_upgrade(|socket| ws(socket, interface, user).instrument(span))
 }
-async fn ws(socket: WebSocket, interface: InterfaceRef) {
+async fn ws(socket: WebSocket, interface: InterfaceRef, user: auth::Claims) {
     let (mut sender, mut receiver) = futures::StreamExt::split(socket);
     let view = std::sync::Arc::new(std::sync::Mutex::new(View::None));
 
-    //TODO: login
     tracing::debug!("connected");
+    let is_admin = ADMIN.contains(&user.to_string());
 
     let mut rx = interface.events.resubscribe();
     let read_view = view.clone();
@@ -78,14 +89,14 @@ async fn ws(socket: WebSocket, interface: InterfaceRef) {
     let mut recv_task = tokio::spawn(async move {
         while let Some(Ok(message)) = receiver.next().await {
             if let Message::Text(text) = message {
-                if let Ok(command) = serde_json::from_str(&text) {
-                    match command {
+                match serde_json::from_str(&text) {
+                    Ok(command) => match command {
                         Command::View { v } => *view.lock().unwrap() = v,
                         Command::Spawn { q } => _ = tx.send(Cmd::Spawn(q.program)),
-                        Command::State { state } => _ = tx.send(Cmd::State(state)),
-                    }
-                } else {
-                    return;
+                        Command::State { state } if is_admin => _ = tx.send(Cmd::State(state)),
+                        Command::State { .. } => return tracing::trace!("not admin"),
+                    },
+                    Err(err) => return tracing::trace!("serde: {}", err),
                 }
             }
         }
@@ -97,10 +108,7 @@ async fn ws(socket: WebSocket, interface: InterfaceRef) {
             tracing::trace!("send err");
             recv_task.abort()
         },
-        _ = (&mut recv_task) => {
-            tracing::trace!("recv err");
-            send_task.abort()
-        },
+        _ = (&mut recv_task) => send_task.abort(),
     };
     tracing::debug!("disconnected");
 }

@@ -6,7 +6,7 @@ RUN git checkout ${COMMIT}
 
 FROM node AS client
 COPY --from=git /repo/client/ /
-RUN yarn build
+RUN npm run build
 
 FROM rust AS server
 COPY --from=git /repo/ /

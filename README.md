@@ -27,19 +27,20 @@ Opensource RTS programming game using WebAssembly
 
 This project contains multiple folders:
 - [Bot programming API](./api)
-- [Rust backend](./server)
-- [TS frontend](./client)
+- [WebUI](./client)
+- [Game core](./engine)
+- [Game server](./server)
 
 ## Prerequisites
 
 * Rustup
-* Yarn
+* NPM
 
 ## Usage
 
 - `git clone https://github.com/scalliony/repo.git`
 - Copy and edit `.env.sample` to `.env`
-- `yarn start`
+- `npm start`
 - Visit http://localhost:3000
 
 ### Authentication
@@ -53,7 +54,7 @@ Also replace `AUTH_JWT_SECRET` value with a random secret !
 
 ### Log level
 
-This project uses [RUST_LOG](https://rust-lang-nursery.github.io/rust-cookbook/development_tools/debugging/config_log.html) env variable for log level configuration. A good default is `RUST_LOG=scalliony_server=debug,tower_http=debug`
+This project uses [RUST_LOG](https://rust-lang-nursery.github.io/rust-cookbook/development_tools/debugging/config_log.html) env variable for log level configuration. A good default is already in [.env.sample](./.env.sample).
 
 ## Docker
 
@@ -71,7 +72,7 @@ docker run scalliony
 ## Tests
 
 ```
-yarn test
+npm test
 ```
 
 ## License

@@ -1,5 +1,5 @@
 [workspace]
-members = ["server","api/rust/hello","api/rust/hello-wasi","api/rust/explorer"]
+members = ["server","engine","api/rust/hello","api/rust/hello-wasi","api/rust/explorer"]
 default-members = ["server"]
 
 [profile.release]

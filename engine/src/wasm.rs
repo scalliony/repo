@@ -1,3 +1,5 @@
+//FIXME: remove dead_code
+#![allow(dead_code)]
 use anyhow::{bail, Result};
 use std::{
     io::{self, Write},

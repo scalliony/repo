@@ -1,11 +1,15 @@
 {
     "private": true,
-    "workspaces": ["*"],
+    "workspaces": [
+        "*"
+    ],
     "scripts": {
-        "build": "yarn workspaces run build",
-        "build:dev": "yarn workspaces run build:dev",
-        "start": "yarn build && yarn workspace @scalliony/server run start",
-        "start:dev": "yarn build:dev && yarn workspace @scalliony/server run start:dev",
-        "test": "yarn workspaces run test"
+        "build": "npm run --ws build",
+        "build:dev": "npm run --ws build:dev",
+        "prestart": "npm run build",
+        "start": "cargo run -q --release",
+        "prestart:dev": "npm run build:dev",
+        "start:dev": "cargo run -q",
+        "test": "npm run --ws test"
     }
 }

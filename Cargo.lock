@@ -1726,20 +1726,36 @@ name = "scalliony-api"
 version = "0.1.0"
 
 [[package]]
-name = "scalliony-server"
+name = "scalliony-engine"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "axum",
- "axum-extra",
  "bytes",
  "chrono",
  "derive_more",
+ "serde",
+ "tokio",
+ "tracing",
+ "typed-index-collections",
+ "wasi-common",
+ "wasmtime",
+ "wasmtime-wasi",
+]
+
+[[package]]
+name = "scalliony-server"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "axum-extra",
+ "chrono",
  "dotenv",
  "futures",
  "jsonwebtoken",
+ "lazy_static",
  "oauth2",
  "reqwest",
+ "scalliony-engine",
  "serde",
  "serde_json",
  "tokio",
@@ -1748,11 +1764,8 @@ dependencies = [
  "tower-http",
  "tracing",
  "tracing-appender",
+ "tracing-forest",
  "tracing-subscriber",
- "typed-index-collections",
- "wasi-common",
- "wasmtime",
- "wasmtime-wasi",
 ]
 
 [[package]]
@@ -2256,6 +2269,18 @@ checksum = "7b7358be39f2f274f322d2aaed611acc57f382e8eb1e5b48cb9ae30933495ce7"
 dependencies = [
  "once_cell",
  "valuable",
+]
+
+[[package]]
+name = "tracing-forest"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5db74d83f3fcda3ca1355dd91294098df02cc03d54e6cce81e40a18671c3fd7a"
+dependencies = [
+ "smallvec",
+ "thiserror",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
