@@ -1,6 +1,6 @@
 mod dto;
 use crate::auth;
-use crate::game::{Command as Cmd, Event as Ev, InterfaceRef};
+use crate::game::{Command as Cmd, compile_command, Event as Ev, InterfaceRef};
 use axum::{
     body::Bytes,
     extract::{
@@ -40,7 +40,7 @@ pub fn router(interface: InterfaceRef) -> Router {
 }
 
 async fn compile(bytes: Bytes, Extension(interface): Extension<InterfaceRef>) -> impl IntoResponse {
-    let (cmd, rx) = Cmd::compile(bytes);
+    let (cmd, rx) = compile_command(bytes);
     interface.commands.send(cmd).unwrap();
     rx.await.unwrap().map(Json).map_err(|err| (StatusCode::BAD_REQUEST, Json(err)))
 }

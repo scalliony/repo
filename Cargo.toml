@@ -1,6 +1,11 @@
 [workspace]
-members = ["server","engine","api/rust/hello","api/rust/hello-wasi","api/rust/explorer"]
-default-members = ["server"]
+members = ["client","engine","server","sys","api/rust/hello","api/rust/hello-wasi","api/rust/explorer"]
+resolver = "2"
 
 [profile.release]
-lto = true
+lto = "thin"
+
+[profile.dev-fast]
+inherits = "dev"
+[profile.dev-fast.package."*"]
+opt-level = 3

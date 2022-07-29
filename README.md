@@ -26,10 +26,11 @@ Opensource RTS programming game using WebAssembly
 ## Monorepo
 
 This project contains multiple folders:
-- [Bot programming API](./api)
-- [WebUI](./client)
-- [Game core](./engine)
-- [Game server](./server)
+- [/api](./api): Bot programming API
+- [/client](./client): Native game client
+- [/server](./server): Game server
+- [/sys](./sys): System binding
+- [/web](./web): Web UI
 
 ## Prerequisites
 

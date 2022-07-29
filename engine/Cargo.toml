@@ -9,16 +9,10 @@ license = "MIT"
 repository = "https://github.com/scalliony/repo"
 
 [dependencies]
-wasmtime = "0.39"
-wasmtime-wasi = "0.39"
-wasi-common = "0.39"
-anyhow = "1"
+sys = { path = "../sys", package = "scalliony-sys", version = "0.1.0" }
 tracing = "0.1"
 derive_more = "0.99"
 typed-index-collections = "3"
 chrono = "0.4"
 bytes = "1"
-# MAYBE: use callback
-tokio = { version = "1", features = ["sync"] }
-# MAYBE: under feature
 serde = "1"

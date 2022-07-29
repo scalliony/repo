@@ -1,66 +1,31 @@
 mod dto;
 mod generational;
-mod wasm;
-use anyhow::Result;
 use chrono::Utc;
 pub use dto::*;
 use generational as gen;
-use std::{thread, time::Duration};
-use tokio::sync::{broadcast, mpsc};
+use sys::{wasm, Result};
 use tracing::instrument;
 use typed_index_collections::TiVec;
 
-pub fn run(paused: bool) -> InterfaceRef {
-    let (commands_tx, commands_rx) = mpsc::unbounded_channel();
-    let (events_tx, events_rx) = broadcast::channel(128);
-
-    let thread = thread::Builder::new()
-        .name("game-master".into())
-        .spawn(move || Game::new(commands_rx, events_tx, paused).run())
-        .unwrap();
-
-    std::sync::Arc::new(Interface {
-        commands: commands_tx,
-        events: events_rx,
-        thread: Some(thread),
-    })
-}
-pub struct Interface {
-    pub commands: mpsc::UnboundedSender<Command>,
-    pub events: broadcast::Receiver<Event>,
-    thread: Option<thread::JoinHandle<()>>,
-}
-impl Drop for Interface {
-    #[instrument(skip_all)]
-    fn drop(&mut self) {
-        if let Some(handle) = self.thread.take() {
-            tracing::debug!("exit");
-            _ = self.commands.send(Command::State(State::Stopped));
-            handle.join().unwrap();
-        }
-        tracing::trace!("bye");
-    }
-}
-pub type InterfaceRef = std::sync::Arc<Interface>;
-
-type VM = wasm::Computer<BotState>;
-struct Game {
-    commands: mpsc::UnboundedReceiver<Command>,
-    events: EventSender,
+type VM = wasm::Linker<BotStore>;
+pub struct Game<R, S> {
+    commands: R,
+    events: EventSender<S>,
 
     state: State,
     counter: u32,
+    in_tick: bool,
 
     vm: VM,
     programs: TiVec<ProgramId, Program>,
     bots: gen::Array<BotId, Bot>,
 }
-impl Game {
-    fn new(
-        commands: mpsc::UnboundedReceiver<Command>,
-        events: broadcast::Sender<Event>,
-        paused: bool,
-    ) -> Self {
+impl<R, S> Game<R, S>
+where
+    R: FnMut() -> Option<Command>,
+    S: FnMut(Event),
+{
+    pub fn new(commands: R, events: S, paused: bool) -> Self {
         let state = if paused {
             tracing::warn!("game is paused");
             State::Paused
@@ -68,39 +33,49 @@ impl Game {
             State::Running
         };
 
-        let vm = VM::new();
-        //TODO: vm.add_func("io", "log", func: impl IntoFunc<T, Params, Args>);
+        let mut vm = VM::new(&wasm::Engine::new());
+        vm.add_wasi().add_export(wasm::spec::MAY_EXPORT_START.clone());
+        vm.add_export(wasm::spec::LinkExport {
+            name: "tick",
+            required: true,
+            value: wasm::spec::ExportType::UnitFunc,
+        });
+        //TODO: .add_func("io", "log", func: impl IntoFunc<T, Params, Args>);
 
         Self {
             commands,
             events: EventSender(events),
             state,
             counter: 0,
+            in_tick: false,
             vm,
             programs: TiVec::new(),
             bots: gen::Array::new(),
         }
     }
 
-    fn run(mut self) {
-        while self.state != State::Stopped {
-            self.tick();
-            thread::sleep(Duration::from_secs(2));
-            self.counter += 1;
+    pub fn update(&mut self) -> State {
+        if self.state == State::Stopped {
+            return State::Stopped;
         }
+
+        self.receive();
+        if self.state != State::Running {
+            return State::Paused;
+        }
+
+        self.tick();
+        self.in_tick = false;
+        self.counter += 1;
+
+        return self.state;
     }
 
     #[inline]
     #[instrument(skip_all, fields(id = self.counter))]
     fn tick(&mut self) {
-        self.events.send(Event::TickStart(self.counter.into(), Utc::now()));
-        loop {
-            self.commands();
-            if self.state != State::Paused {
-                break;
-            }
-            thread::sleep(Duration::from_millis(200));
-        }
+        self.with_tick();
+
         for (id, bot) in self.bots.iter_mut() {
             let span = tracing::debug_span!("bot", id = gen::I::from(id));
             let _span_guard = span.enter();
@@ -119,8 +94,8 @@ impl Game {
 
             // Tick
             tracing::trace!("fuel {}", cpu.process.fuel());
-            let res = cpu.process.call(cpu.tick_func, ());
-            self.events.log(&src, cpu.process.read_log());
+            let res = cpu.process.call(&cpu.tick, ());
+            self.events.log(&src, cpu.process.store().read_log());
             if let Err(trap) = res {
                 self.events.send(src.err(err_trap("Trap during tick", trap)));
             }
@@ -131,10 +106,10 @@ impl Game {
     }
 
     #[inline]
-    #[instrument(level = "debug", skip_all)]
-    fn commands(&mut self) {
+    #[instrument(level = "debug", name = "commands", skip_all)]
+    fn receive(&mut self) {
         let mut next_state = self.state;
-        while let Ok(command) = self.commands.try_recv() {
+        while let Some(command) = (self.commands)() {
             match command {
                 Command::State(v) => {
                     if next_state != State::Stopped {
@@ -142,13 +117,12 @@ impl Game {
                     }
                 }
                 Command::Compile(code, cb) => {
-                    _ = cb.send(
-                        Program::new(code, &self.vm)
-                            .map(|program| self.programs.push_and_get_key(program))
-                            .map_err(|err| {
-                                Error::new("Failed to compile", err.root_cause().to_string())
-                            }),
-                    )
+                    let res = Program::new(code, &self.vm)
+                        .map(|program| self.programs.push_and_get_key(program))
+                        .map_err(|err| {
+                            Error::new("Failed to compile", err.root_cause().to_string())
+                        });
+                    cb.resolve(res)
                 }
                 Command::Spawn(id) => {
                     let i: usize = id.into();
@@ -168,6 +142,14 @@ impl Game {
         }
     }
 
+    #[inline]
+    fn with_tick(&mut self) {
+        if !self.in_tick {
+            self.events.send(Event::TickStart(self.counter.into(), Utc::now()));
+            self.in_tick = false;
+        }
+    }
+
     #[cold]
     #[inline]
     #[instrument(level = "trace", skip_all)]
@@ -177,23 +159,25 @@ impl Game {
         vm: &VM,
     ) -> Result<(), (String, Error)> {
         let program = programs.get_mut(bot.program).unwrap();
-        let pre = program.compiled(vm).unwrap();
-        let (mut process, res) = wasm::Process::instantiate(pre, BotState::default(), 10_000);
-        let instance = match res {
-            Ok(v) => v,
-            Err(trap) => return Err((process.read_log(), err_trap("Trap during start", trap))),
-        };
-        let tick_func = process.get_func::<(), ()>(&instance, "tick").unwrap();
-        bot.cpu = Some(BotCpu { process, tick_func });
+        let tpl = program.compiled(vm).unwrap();
+        let (mut process, res) = wasm::Instance::started(tpl, BotState::default(), 10_000);
+        if let Err(trap) = res {
+            return Err((process.store().read_log(), err_trap("Trap during start", trap)))
+        }
+        let tick = process.get_func::<(), ()>("tick").unwrap();
+        bot.cpu = Some(BotCpu { process, tick });
         Ok(())
     }
 }
 
-struct EventSender(broadcast::Sender<Event>);
-impl EventSender {
+struct EventSender<S>(S);
+impl<S> EventSender<S>
+where
+    S: FnMut(Event),
+{
     fn send(&mut self, event: Event) {
         tracing::trace!(?event);
-        _ = self.0.send(event);
+        self.0(event);
     }
     fn log(&mut self, src: &BotSrc, log: String) {
         if let Some(log) = src.log(log) {
@@ -203,22 +187,30 @@ impl EventSender {
 }
 
 struct Program {
-    inner: Option<wasm::Program<BotState>>,
+    inner: Option<wasm::Template<BotStore>>,
     code: Bytes,
 }
 impl Program {
     fn new(code: Bytes, vm: &VM) -> Result<Self> {
         let mut s = Self { inner: None, code };
-        _ = s.compiled(vm)?;
+        s.compile(vm)?;
         Ok(s)
     }
-    fn compiled(&mut self, vm: &VM) -> Result<&mut wasm::Program<BotState>> {
+
+    fn compiled(&mut self, vm: &VM) -> Result<&mut wasm::Template<BotStore>> {
         if self.inner.is_none() {
-            let program = wasm::Program::compile(vm, &self.code)
-                .and_then(|p| p.has_flat_func("tick", true))?;
-            self.inner = Some(program);
+            self.compile(vm)?;
         }
         Ok(self.inner.as_mut().unwrap())
+    }
+    #[cold]
+    #[inline]
+    #[instrument(level = "trace", skip_all)]
+    fn compile(&mut self, vm: &VM) -> Result<()> {
+        debug_assert!(self.inner.is_none());
+        let tpl = wasm::Template::new(vm, &self.code, BotState::default())?;
+        self.inner = Some(tpl);
+        Ok(())
     }
 }
 
@@ -227,9 +219,10 @@ struct Bot {
     cpu: Option<BotCpu>,
 }
 struct BotCpu {
-    process: wasm::Process<BotState>,
-    tick_func: wasm::Func<(), ()>,
+    process: wasm::Instance<BotStore>,
+    tick: wasm::Func<(), ()>,
 }
+type BotStore = wasm::WasiStore<BotState>;
 struct BotState {}
 impl Default for BotState {
     fn default() -> Self {

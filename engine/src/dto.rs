@@ -4,7 +4,6 @@ use chrono::{DateTime, Utc};
 use derive_more::{From, Into};
 use serde::{Deserialize, Serialize, Serializer};
 use std::fmt;
-use tokio::sync::oneshot;
 
 #[derive(Clone, Debug)]
 pub enum Event {
@@ -18,16 +17,9 @@ pub enum Event {
 #[derive(Debug)]
 pub enum Command {
     State(State),
-    Compile(Bytes, oneshot::Sender<CompileRes>),
+    Compile(Bytes, Promise<CompileRes>),
     Spawn(ProgramId),
 }
-impl Command {
-    pub fn compile(code: Bytes) -> (Self, oneshot::Receiver<CompileRes>) {
-        let (tx, rx) = oneshot::channel();
-        (Self::Compile(code, tx), rx)
-    }
-}
-type CompileRes = Result<ProgramId, Error>;
 
 /// A cheaply clonable readonly String
 #[derive(PartialEq, Eq, PartialOrd, Ord, Default, Clone, Deserialize)]
@@ -66,6 +58,25 @@ impl Serialize for Str {
         S: Serializer,
     {
         self.as_ref().serialize(serializer)
+    }
+}
+
+#[repr(transparent)]
+pub struct Promise<V>(Box<dyn FnOnce(V) + Send>);
+impl<V> Promise<V> {
+    #[inline]
+    pub fn new(f: impl FnOnce(V) + Send + 'static) -> Self {
+        Self(Box::new(f))
+    }
+
+    #[inline]
+    pub(crate) fn resolve(self, v: V) {
+        self.0(v)
+    }
+}
+impl<V> fmt::Debug for Promise<V> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "({}) -> ()", std::any::type_name::<V>())
     }
 }
 
@@ -147,3 +158,5 @@ pub enum State {
     Paused,
     Stopped,
 }
+
+pub type CompileRes = Result<ProgramId, Error>;
