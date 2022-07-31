@@ -96,7 +96,7 @@ document.addEventListener('DOMContentLoaded', () => {
         })*/
     viewport.emit('moved')
 
-    //net()
+    net()
 })
 
 function net() {

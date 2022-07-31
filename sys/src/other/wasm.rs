@@ -201,9 +201,10 @@ where
     pub fn fuel(&mut self) -> u64 {
         self.1.consume_fuel(0).unwrap_or(0)
     }
-    pub fn add_fuel(&mut self, v: u64) -> Result<(), ()> {
-        i64::try_from(self.fuel().checked_add(v).unwrap_or(u64::MAX)).map_err(|_| ())?;
-        self.1.add_fuel(v).map_err(|_| ())
+    pub fn add_fuel(&mut self, v: u64) -> Result<(), std::num::TryFromIntError> {
+        i64::try_from(self.fuel().checked_add(v).unwrap_or(u64::MAX))?;
+        self.1.add_fuel(v).unwrap();
+        Ok(())
     }
 }
 

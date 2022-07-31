@@ -7,5 +7,6 @@ lto = "thin"
 
 [profile.dev-fast]
 inherits = "dev"
+opt-level = 1
 [profile.dev-fast.package."*"]
 opt-level = 3

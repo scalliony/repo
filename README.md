@@ -28,6 +28,7 @@ Opensource RTS programming game using WebAssembly
 This project contains multiple folders:
 - [/api](./api): Bot programming API
 - [/client](./client): Native game client
+- [/engine](./engine): Core game logic
 - [/server](./server): Game server
 - [/sys](./sys): System binding
 - [/web](./web): Web UI

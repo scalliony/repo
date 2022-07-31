@@ -68,7 +68,7 @@ where
         self.in_tick = false;
         self.counter += 1;
 
-        return self.state;
+        self.state
     }
 
     #[inline]
