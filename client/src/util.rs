@@ -1,6 +1,7 @@
 pub use bulb::hex::*;
 use macroquad::models::Vertex;
 use macroquad::prelude::*;
+pub use macroquad::prelude::{debug, error, info, trace, warn};
 
 pub type F = f32;
 /// 2*pi
@@ -23,14 +24,14 @@ pub fn draw_cell(center: Pos, rad: Size, color: Color) {
 
     draw_mesh(&Mesh { vertices, indices, texture: None });
 }
-pub fn draw_border(center: Pos, rad: Size) {
+pub fn draw_border(center: Pos, rad: Size, color: Color) {
     if super::opts::GRID {
         for i in 0..6 {
             let r = i as F * TAU / 6.;
             let a = center + rad * Pos::from((r.cos(), r.sin()));
             let r = (i + 1) as F * TAU / 6.;
             let b = center + rad * Pos::from((r.cos(), r.sin()));
-            draw_line(a.x, a.y, b.x, b.y, 1., BLACK);
+            draw_line(a.x, a.y, b.x, b.y, 1., color);
         }
     }
 }

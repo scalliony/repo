@@ -8,6 +8,7 @@ pub type I = i32;
 
 /// Hexagon in qrs format
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Hex(I, I);
 impl Hex {
     #[inline]
@@ -144,6 +145,7 @@ impl ExactSizeIterator for HexRangeIter {
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 #[repr(u8)]
+#[cfg_attr(feature = "serde", derive(serde_repr::Serialize_repr, serde_repr::Deserialize_repr))]
 pub enum Direction {
     Up = 0,
     UpRight,

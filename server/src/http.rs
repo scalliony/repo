@@ -41,7 +41,7 @@ pub async fn serve(app: axum::Router<Body>, interface: game::InterfaceRef) {
     let commands = interface.commands.clone();
     let shutdown = async move {
         shutdown_signal().await;
-        _ = commands.send(game::Command::State(game::State::Stopped));
+        _ = commands.send(game::Command::ChangeState(game::State::Stopped));
     };
 
     // run it with hyper

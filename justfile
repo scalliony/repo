@@ -30,7 +30,7 @@ build-web-abort:
 # Build client (wasm, dev)
 build-web-dev: 
   @just build-dev --target wasm32-unknown-unknown
-  @cp target/wasm32-unknown-unknown/release/scalliony-client.wasm -o client/dist/scalliony.wasm
+  @cp target/wasm32-unknown-unknown/release/scalliony-client.wasm client/dist/scalliony.wasm
 
 # Run client (.exe, dev) usefull in wsl
 play-win-dev *ARGS:

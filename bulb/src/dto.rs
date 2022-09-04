@@ -2,31 +2,87 @@ use crate::hex::{Direction, Hex};
 pub use bytes::Bytes;
 use std::fmt;
 
+/// Message from the engine
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(tag = "k"))]
 pub enum Event {
-    State(State),
-    TickStart(TickId, Timestamp),
+    StateChange(State),
+    TickStart {
+        tid: TickId,
+        ts: Timestamp,
+    },
     TickEnd,
-    Bot(BotSrc, BotEvent),
+    BotSpawn {
+        #[cfg_attr(feature = "serde", serde(flatten))]
+        src: BotSrc,
+    },
+    BotDie {
+        #[cfg_attr(feature = "serde", serde(flatten))]
+        src: BotSrc,
+    },
+    BotLog {
+        #[cfg_attr(feature = "serde", serde(flatten))]
+        src: BotSrc,
+        msg: Str,
+    },
+    BotError {
+        #[cfg_attr(feature = "serde", serde(flatten))]
+        src: BotSrc,
+        #[cfg_attr(feature = "serde", serde(flatten))]
+        err: Error,
+    },
+    BotRotate {
+        #[cfg_attr(feature = "serde", serde(flatten))]
+        src: BotSrc,
+        dir: Direction,
+    },
+    BotMove {
+        #[cfg_attr(feature = "serde", serde(flatten))]
+        src: BotSrc,
+        to: Hex,
+    },
+    BotCollide {
+        #[cfg_attr(feature = "serde", serde(flatten))]
+        src: BotSrc,
+        to: Hex,
+    },
     Cells(CellRange),
 }
-#[derive(Clone, Debug)]
-pub enum BotEvent {
-    Spawn,
-    Die,
-    Log(Str),
-    Error(Error),
-    Rotate(Direction),
-    Move(Hex),
-    Collide(Hex),
+impl Event {
+    pub fn src(&self) -> Option<&BotSrc> {
+        use Event::*;
+        match self {
+            BotSpawn { src } => Some(src),
+            BotDie { src } => Some(src),
+            BotLog { src, .. } => Some(src),
+            BotError { src, .. } => Some(src),
+            BotRotate { src, .. } => Some(src),
+            BotMove { src, .. } => Some(src),
+            BotCollide { src, .. } => Some(src),
+            StateChange { .. } | TickStart { .. } | TickEnd | Cells { .. } => None,
+        }
+    }
 }
 
+/// Message to the engine
 #[derive(Debug)]
 pub enum Command {
-    State(State),
+    ChangeState(State),
     Compile(Bytes, Promise<CompileRes>),
-    Spawn(ProgramId, Hex),
+    Spawn(SpawnBody),
     Map(HexRange, Promise<CellRange>),
+}
+
+/// Over the network [`Command`]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(tag = "k"))]
+pub enum Rpc {
+    SetView(Area),
+    Map(HexRange),
+    Spawn(SpawnBody),
+    ChangeState(State),
 }
 
 /// A cheaply clonable readonly String
@@ -180,41 +236,21 @@ impl Cell {
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Error {
-    pub ctx: &'static str,
+    pub ctx: Str,
     pub err: Str,
 }
 impl Error {
     pub fn new(ctx: &'static str, err: String) -> Self {
-        Self { ctx, err: err.into() }
+        Self { ctx: ctx.into(), err: err.into() }
     }
 }
 
-#[derive(Clone)]
+#[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct BotSrc {
-    pub id: BotId,
+    pub bid: BotId,
     pub at: Hex,
     /*owner*/
-}
-impl BotSrc {
-    #[inline]
-    pub fn ev(&self, ev: BotEvent) -> Event {
-        Event::Bot(self.clone(), ev)
-    }
-    pub fn log(&self, msg: String) -> Option<Event> {
-        if msg.is_empty() {
-            None
-        } else {
-            Some(self.ev(BotEvent::Log(msg.into())))
-        }
-    }
-    pub fn err(&self, err: Error) -> Event {
-        self.ev(BotEvent::Error(err))
-    }
-}
-impl fmt::Debug for BotSrc {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("BotSrc").field(&self.id.0).finish()
-    }
 }
 
 #[derive(PartialEq, Debug, Clone, Copy)]
@@ -250,14 +286,18 @@ impl fmt::Debug for Timestamp {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct HexRange {
     pub center: Hex,
     pub rad: u8,
 }
 
 #[derive(Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct CellRange {
+    #[cfg_attr(feature = "serde", serde(flatten))]
     pub range: HexRange,
+    //TODO: serialize to bytes
     pub cells: Vec<Cell>,
 }
 impl CellRange {
@@ -272,4 +312,42 @@ impl fmt::Debug for CellRange {
             .field("rad", &self.range.rad)
             .finish_non_exhaustive()
     }
+}
+
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(tag = "t"))]
+pub enum Area {
+    None,
+    Range(HexRange),
+    All,
+}
+impl Default for Area {
+    fn default() -> Self {
+        Self::None
+    }
+}
+impl Area {
+    pub fn contains(&self, p: Hex) -> bool {
+        use Area::*;
+        match self {
+            None => false,
+            All => true,
+            Range(r) => r.center.dist(p) <= r.rad as i32,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct SpawnBody {
+    pub pid: ProgramId,
+    pub to: Hex,
+}
+
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct Viewer {
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub view: Area,
 }

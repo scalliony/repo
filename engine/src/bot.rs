@@ -19,6 +19,12 @@ impl Bot {
             Err(off) => off.at,
         }
     }
+    pub fn src(&self, bid: BotId) -> BotSrc {
+        match &self.cpu {
+            Ok(cpu) => cpu.state().src(),
+            Err(off) => BotSrc { bid, at: off.at },
+        }
+    }
 }
 
 pub struct Cpu {
@@ -85,7 +91,7 @@ impl State {
         self.at + self.facing.into()
     }
     pub fn src(&self) -> BotSrc {
-        BotSrc { id: self.id, at: self.at }
+        BotSrc { bid: self.id, at: self.at }
     }
 
     pub fn update(&mut self, map: &impl GameMapTrait) {

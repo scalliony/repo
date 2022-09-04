@@ -6,7 +6,8 @@ use std::{sync::mpsc, thread};
 
 pub struct Client {
     commands: mpsc::Sender<Command>,
-    events: mpsc::Receiver<Event>,
+    events_rx: mpsc::Receiver<Event>,
+    events_tx: mpsc::Sender<Event>,
     thread: Option<thread::JoinHandle<()>>,
     //TODO: move speed managment to bulb
     tick_ms: Arc<AtomicU64>,
@@ -18,10 +19,11 @@ impl Client {
 
         let tick_ms = Arc::new(AtomicU64::new(DEFAULT_TICK_DURATION_MS));
 
+        let evs = events_tx.clone();
         let mut game = Game::new(
             move || commands_rx.try_recv().ok(),
             move |v: Event| {
-                _ = events_tx.send(v);
+                _ = evs.send(v);
             },
             false,
         );
@@ -37,7 +39,7 @@ impl Client {
             })
             .unwrap();
 
-        Self { commands: commands_tx, events: events_rx, thread: Some(thread), tick_ms }
+        Self { commands: commands_tx, events_rx, events_tx, thread: Some(thread), tick_ms }
     }
 }
 impl Drop for Client {
@@ -50,11 +52,21 @@ impl Drop for Client {
 impl super::super::Client for Client {
     #[inline]
     fn try_recv(&mut self) -> Option<Event> {
-        self.events.try_recv().ok()
+        self.events_rx.try_recv().ok()
     }
     #[inline]
-    fn send(&mut self, c: Command) {
+    fn send(&mut self, c: Rpc) {
         //TODO: if tick_rate update tick_ms
-        _ = self.commands.send(c);
+        if let Some(cmd) = match c {
+            Rpc::ChangeState(v) => Some(Command::ChangeState(v)),
+            Rpc::Spawn(q) => Some(Command::Spawn(q)),
+            Rpc::Map(q) => {
+                let evs = self.events_tx.clone();
+                Some(Command::Map(q, Promise::new(move |cr| _ = evs.send(Event::Cells(cr)))))
+            }
+            Rpc::SetView { .. } => None,
+        } {
+            _ = self.commands.send(cmd);
+        }
     }
 }

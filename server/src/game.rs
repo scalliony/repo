@@ -17,9 +17,7 @@ pub fn run() -> InterfaceRef {
 
     let mut game = Game::new(
         move || commands_rx.try_recv().ok(),
-        move |v: Event| {
-            _ = events_tx.send(v);
-        },
+        move |v: Event| _ = events_tx.send(v),
         paused,
     );
 
@@ -57,7 +55,7 @@ impl Drop for Interface {
     fn drop(&mut self) {
         if let Some(handle) = self.thread.take() {
             tracing::debug!("exit");
-            _ = self.commands.send(Command::State(State::Stopped));
+            _ = self.commands.send(Command::ChangeState(State::Stopped));
             handle.join().unwrap();
         }
         tracing::trace!("bye");

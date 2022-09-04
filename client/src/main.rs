@@ -5,6 +5,7 @@ mod logger;
 mod opts;
 mod util;
 mod view;
+use chrono::{TimeZone, Utc};
 use macroquad::prelude::*;
 use util::*;
 
@@ -14,7 +15,16 @@ async fn main() {
         ctx.set_visuals(egui::Visuals { window_rounding: 0.0.into(), ..Default::default() })
     });
 
-    let mut client = game::Client::new_local();
+    let mut client = game::Client::new(if game::Client::HAS_ONLINE {
+        Some("ws://localhost:3000/api/ws")
+    } else {
+        None
+    })
+    .unwrap();
+    //FIXME: GameState and GUI
+    while !client.connected() {
+        next_frame().await
+    }
 
     let mut view = view::View::default();
     let mut view_tracker = game::ViewTracker::new();
@@ -32,9 +42,7 @@ async fn main() {
     let mut tick_lerp: F = 0.;
 
     loop {
-        if let Some(cr) = view_tracker.track(&mut client, view.update()) {
-            state.apply_one(bulb::dto::Event::Cells(cr));
-        }
+        view_tracker.track(&mut client, view.update());
         client.update();
         programs.update();
 
@@ -44,9 +52,9 @@ async fn main() {
             tick_lerp = (tick_lerp + get_frame_time() / tick_duration).min(1.);
         }
 
-        gui::ui(|ui| {
+        gui::ui(|ctx| {
             use egui::*;
-            Window::new("Program Editor").show(ui, |ui| {
+            Window::new("Program Editor").show(ctx, |ui| {
                 ui.code_editor(&mut code);
                 if ui.add_enabled(!code.as_bytes().is_empty(), Button::new("Compile")).clicked() {
                     programs.compile(&mut client, std::mem::take(&mut code).into_bytes().into())
@@ -54,7 +62,7 @@ async fn main() {
             });
 
             if !programs.as_ref().is_empty() {
-                Window::new("Spawn").show(ui, |ui| {
+                Window::new("Spawn").show(ctx, |ui| {
                     ui.separator();
                     ui.horizontal(|ui| {
                         ui.label("At:");
@@ -76,6 +84,18 @@ async fn main() {
                     }
                 });
             }
+
+            Window::new("Tracker")
+                .title_bar(false)
+                .anchor(Align2::RIGHT_TOP, (-5., 5.))
+                .auto_sized()
+                .show(ctx, |ui| {
+                    ui.small(format!("FPS: {} - {:.3}ms", get_fps(), get_frame_time() * 1000.));
+                    if let Some((id, ts)) = state.tick() {
+                        let ts = Utc.timestamp_millis(ts.into());
+                        ui.small(format!("{}\n{}\n{}", id, ts.date(), ts.time()));
+                    }
+                });
         });
 
         draw(&view, &state, tick_lerp);
@@ -84,17 +104,18 @@ async fn main() {
 }
 fn window() -> Conf {
     logger::init();
-    Conf {
-        window_title: concat!("Scalliony ", env!("CARGO_PKG_VERSION")).to_string(),
-        sample_count: 4,
-        icon: None,
-        ..Conf::default()
+    macro_rules! title {
+        () => {
+            concat!("Scalliony ", env!("CARGO_PKG_VERSION"))
+        };
     }
+    info!(title!());
+    Conf { window_title: title!().to_string(), sample_count: 4, icon: None, ..Conf::default() }
 }
 
 #[inline]
 fn draw(view: &view::View, state: &game::AnimatedState, lerp: F) {
-    clear_background(Color::new(0.1, 0.1, 0.1, 1.0));
+    clear_background(BLACK);
     let mut bots = std::collections::BTreeSet::<bulb::dto::BotId>::new();
     let hex_area = Size::new(screen_width() * 0.75, screen_height());
     let center = Pos::new(screen_width() / 2.0, screen_height() / 2.0);
@@ -117,7 +138,7 @@ fn draw(view: &view::View, state: &game::AnimatedState, lerp: F) {
                 Cell::Wall => draw_cell(pos, rad, DARKGRAY),
             }
         }
-        draw_border(pos, rad);
+        draw_border(pos, rad, Color::new(0.1, 0.1, 0.1, 1.0));
     }
     for id in bots {
         let (from, to) = state.bot(id);
@@ -151,7 +172,6 @@ fn draw(view: &view::View, state: &game::AnimatedState, lerp: F) {
     }
 
     gui::draw();
-    draw_text(&format!("FPS: {}", get_fps()), 20.0, 20.0, 30.0, BLUE);
 }
 
 enum Code {

@@ -11,29 +11,25 @@ use std::{
 pub struct ViewTracker {
     at: HexRange,
     throttle: usize,
-    map: Arc<Mutex<Option<CellRange>>>,
 }
 impl ViewTracker {
     const THROTTLE: usize = 100;
 
     pub fn new() -> Self {
-        Self { at: HexRange { center: Hex::default(), rad: 0 }, throttle: 0, map: Arc::default() }
+        Self { at: HexRange { center: Hex::default(), rad: 0 }, throttle: 0 }
     }
-    pub fn track(&mut self, client: &mut Client, view: HexRange) -> Option<CellRange> {
+    pub fn track(&mut self, client: &mut Client, view: HexRange) {
         if self.at != view {
             if self.throttle > 0 {
                 self.throttle -= 1;
             } else {
                 self.throttle = Self::THROTTLE;
                 self.at = view;
-                let map = self.map.clone();
-                client.send(Command::Map(
-                    view,
-                    Promise::new(move |cr: CellRange| *map.lock().unwrap() = Some(cr)),
-                ))
+                //FIXME: SetView more ofter
+                client.send(Rpc::SetView(Area::Range(view)));
+                client.send(Rpc::Map(view));
             }
         }
-        self.map.lock().unwrap().take()
     }
 }
 
@@ -50,11 +46,6 @@ impl BotState {
     }
 }
 
-trait StateView {
-    fn at(&self, at: Hex) -> Option<&Cell>;
-    fn bot(&self, id: BotId) -> Option<&BotState>;
-}
-
 #[derive(Default, Clone)]
 struct State {
     map: BTreeMap<Hex, Cell>,
@@ -66,39 +57,29 @@ impl State {
         self.map.extend(other.map.into_iter());
     }
     fn bot_mut(&mut self, src: &BotSrc) -> &mut BotState {
-        self.map.insert(src.at, Cell::Bot(src.id));
+        self.map.insert(src.at, Cell::Bot(src.bid));
         self.bots
-            .entry(src.id)
+            .entry(src.bid)
             .and_modify(|bot| bot.at = src.at)
             .or_insert(BotState { at: src.at, ..Default::default() })
     }
-}
 
-#[derive(Default)]
-struct FullState(State);
-impl StateView for FullState {
+    #[inline]
     fn at(&self, at: Hex) -> Option<&Cell> {
-        self.0.map.get(&at)
+        self.map.get(&at)
     }
+    #[inline]
     fn bot(&self, id: BotId) -> Option<&BotState> {
-        self.0.bots.get(&id)
+        self.bots.get(&id)
     }
 }
 
-struct HistoricState<'a>(&'a [State]);
-impl StateView for HistoricState<'_> {
-    fn at(&self, at: Hex) -> Option<&Cell> {
-        self.0.iter().rev().find_map(|state| state.map.get(&at))
-    }
-    fn bot(&self, id: BotId) -> Option<&BotState> {
-        self.0.iter().rev().find_map(|state| state.bots.get(&id))
-    }
-}
-
+/// Allow transitions between previous and current state while building next one
+/// Does not handle temporality
 #[derive(Default)]
 pub struct AnimatedState {
-    prev: FullState,
-    cur: FullState,
+    prev: State,
+    cur: State,
     next: State,
     next_deaths: Vec<BotId>,
     tick: Option<(TickId, Timestamp)>,
@@ -107,56 +88,59 @@ pub struct AnimatedState {
 }
 impl AnimatedState {
     pub fn apply_one(&mut self, e: Event) {
-        macroquad::prelude::trace!("{:?}", e);
+        trace!("{:?}", e);
+        use Event::*;
         match e {
-            Event::TickEnd => {
+            TickEnd => {
                 // MAYBE: filter cur view
-                self.prev.0.clone_from(&self.cur.0);
-                for (_, bot) in self.cur.0.bots.iter_mut() {
+                self.prev.clone_from(&self.cur);
+                for (_, bot) in self.cur.bots.iter_mut() {
                     bot.fix();
                 }
-                self.cur.0.merge(std::mem::take(&mut self.next));
+                self.cur.merge(std::mem::take(&mut self.next));
                 for id in self.next_deaths.iter() {
-                    self.cur.0.bots.remove(id);
+                    self.cur.bots.remove(id);
                 }
                 self.next_deaths.clear();
                 self.tick = std::mem::take(&mut self.next_tick);
             }
-            Event::TickStart(id, at) => {
-                self.next_tick = Some((id, at));
+            TickStart { tid, ts } => {
+                self.next_tick = Some((tid, ts));
             }
-            Event::State(state) => self.state = Some(state),
-            Event::Cells(cr) => self.next.map.extend(cr.iter()),
-            Event::Bot(src, e) => match e {
-                BotEvent::Spawn => _ = self.next.bot_mut(&src),
-                BotEvent::Rotate(to) => self.next.bot_mut(&src).dir = Some(to),
-                BotEvent::Move(to) => {
-                    let from = std::mem::replace(&mut self.next.bot_mut(&src).at, to);
-                    let _prev = self.next.map.insert(from, Cell::Ground);
-                    debug_assert_eq!(_prev, Some(Cell::Bot(src.id)));
-                    self.next.map.insert(to, Cell::Bot(src.id));
+            StateChange(state) => self.state = Some(state),
+            Cells(cr) => self.next.map.extend(cr.iter()),
+            BotSpawn { src } => _ = self.next.bot_mut(&src),
+            BotRotate { src, dir } => self.next.bot_mut(&src).dir = Some(dir),
+            BotMove { src, to } => {
+                let from = std::mem::replace(&mut self.next.bot_mut(&src).at, to);
+                let _prev = self.next.map.insert(from, Cell::Ground);
+                debug_assert_eq!(_prev, Some(Cell::Bot(src.bid)));
+                self.next.map.insert(to, Cell::Bot(src.bid));
+            }
+            BotCollide { src, to } => self.next.bot_mut(&src).collide = Some(to),
+            BotDie { src } => {
+                self.next_deaths.push(src.bid);
+                if let Some(bot) = self.next.bots.remove(&src.bid) {
+                    self.next.map.insert(bot.at, Cell::Ground);
                 }
-                BotEvent::Collide(to) => self.next.bot_mut(&src).collide = Some(to),
-                BotEvent::Die => {
-                    self.next_deaths.push(src.id);
-                    if let Some(bot) = self.next.bots.remove(&src.id) {
-                        self.next.map.insert(bot.at, Cell::Ground);
-                    }
-                }
-                BotEvent::Log(msg) => macroquad::prelude::info!("{:?} log {}", src, msg),
-                BotEvent::Error(msg) => macroquad::prelude::warn!("{:?} err {:?}", src, msg),
-            },
+            }
+            BotLog { src, msg } => info!("{:?} log {}", src, msg),
+            BotError { src, err } => warn!("{:?} err {:?}", src, err),
         }
     }
-    pub fn apply(&mut self, client: &mut Client) -> bool {
+    pub fn apply(&mut self, it: impl Iterator<Item = Event>) -> bool {
         let mut ticked = false;
-        for e in client {
+        for e in it {
             ticked |= matches!(e, Event::TickEnd);
             self.apply_one(e);
         }
         ticked
     }
 
+    #[inline]
+    pub fn tick(&self) -> Option<(TickId, Timestamp)> {
+        self.tick
+    }
     pub fn at(&self, at: Hex) -> (Option<&Cell>, Option<&Cell>) {
         (self.prev.at(at), self.cur.at(at))
     }
@@ -175,10 +159,8 @@ impl Programs {
     }
     pub fn compile(&self, client: &mut Client, code: Bytes) {
         let pipe = self.pipe.clone();
-        client.send(Command::Compile(
-            code,
-            Promise::new(move |res: CompileRes| pipe.lock().unwrap().push(res.unwrap())),
-        ))
+        todo!();
+        // client.send(Rpc::Compile(code));
     }
     pub fn update(&mut self) {
         let pipe = &mut self.pipe.lock().unwrap();
@@ -191,6 +173,6 @@ impl AsRef<[ProgramId]> for Programs {
         &self.actual
     }
 }
-pub fn spawn(client: &mut Client, program: ProgramId, at: Hex) {
-    client.send(Command::Spawn(program, at))
+pub fn spawn(client: &mut Client, pid: ProgramId, to: Hex) {
+    client.send(Rpc::Spawn(SpawnBody { pid, to }))
 }

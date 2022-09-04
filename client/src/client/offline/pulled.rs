@@ -41,9 +41,24 @@ impl super::super::Client for Client {
         self.store.events.borrow_mut().pop_front()
     }
     #[inline]
-    fn send(&mut self, c: Command) {
+    fn send(&mut self, c: Rpc) {
         //TODO: if tick_rate update tick_ms
-        self.store.commands.borrow_mut().push_back(c);
+        if let Some(cmd) = match c {
+            Rpc::ChangeState(v) => Some(Command::ChangeState(v)),
+            Rpc::Spawn(q) => Some(Command::Spawn(q)),
+            Rpc::Map(q) => {
+                let evs = self.store.events.clone();
+                Some(Command::Map(
+                    q,
+                    Promise::new(move |cr| {
+                        evs.borrow_mut().push_back(Event::Cells(cr));
+                    }),
+                ))
+            }
+            Rpc::SetView { .. } => None,
+        } {
+            self.store.commands.borrow_mut().push_back(cmd);
+        }
     }
 }
 

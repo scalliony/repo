@@ -4,7 +4,7 @@ mod gen;
 mod noise;
 use api::*;
 use bot::{Bot, GameMapTrait};
-pub use bulb::dto::*;
+pub use bulb::dto::{Event::*, *};
 use bulb::hex::{Angle, Hex};
 use chrono::Utc;
 use std::collections::{BTreeMap, HashMap};
@@ -86,7 +86,7 @@ where
         self.tick_death();
         self.tick_move();
 
-        self.events.send(Event::TickEnd);
+        self.events.send(TickEnd);
         tracing::debug!("done");
     }
     #[inline]
@@ -115,8 +115,8 @@ where
                 match bot::Cpu::boot(tpl.unwrap(), state, off.fuel) {
                     Ok(cpu) => bot.cpu = Ok(cpu),
                     Err((log, trap)) => {
-                        events.log(&src, log);
-                        events.send(src.err(err_trap("Trap during start", trap)));
+                        events.log(src, log);
+                        events.send(BotError { src, err: err_trap("Trap during start", trap) });
                         return;
                     }
                 }
@@ -128,9 +128,9 @@ where
         let src = cpu.state().src();
         tracing::trace!("fuel {}", cpu.process.fuel());
         let res = cpu.tick();
-        events.log(&src, cpu.store_mut().read_log());
+        events.log(src, cpu.store_mut().read_log());
         if let Err(trap) = res {
-            events.send(src.err(err_trap("Trap during tick", trap)));
+            events.send(BotError { src, err: err_trap("Trap during tick", trap) });
         }
     }
     /// Edit bots and maps
@@ -164,22 +164,22 @@ where
                                 if consume_fuel(cpu, TURN_FUEL, alive) {
                                     let state = cpu.state_mut();
                                     state.facing += Angle::Left;
-                                    self.events.send(src.ev(BotEvent::Rotate(state.facing)));
+                                    self.events.send(BotRotate { src, dir: state.facing });
                                 }
                             }
                             MotorRight => {
                                 if consume_fuel(cpu, TURN_FUEL, alive) {
                                     let state = cpu.state_mut();
                                     state.facing += Angle::Right;
-                                    self.events.send(src.ev(BotEvent::Rotate(state.facing)));
+                                    self.events.send(BotRotate { src, dir: state.facing });
                                 }
                             }
                             MotorForward => {
                                 if consume_fuel(cpu, MOVE_FUEL, alive) {
                                     use TryMoveState::*;
                                     let state = cpu.state();
-                                    let at = state.at_front();
-                                    let mut mov = match self.map.get(at) {
+                                    let to = state.at_front();
+                                    let mut mov = match self.map.get(to) {
                                         Cell::Ground => Valid,
                                         Cell::Bot(other_id) => {
                                             // Assume other bot will move successfully
@@ -200,14 +200,13 @@ where
                                         Cell::Wall => Cancelled,
                                     };
                                     if mov.is_ok()
-                                        && !match self.cache.moves.get_mut(&at) {
+                                        && !match self.cache.moves.get_mut(&to) {
                                             Some(v) => {
                                                 if v.1.is_ok() {
                                                     let other =
                                                         others.get(v.0).unwrap().cpu.as_ref();
                                                     let other = other.unwrap().state().src();
-                                                    self.events
-                                                        .send(other.ev(BotEvent::Collide(at)));
+                                                    self.events.send(BotCollide { src: other, to });
                                                     v.1 = Cancelled;
                                                 }
                                                 false
@@ -218,10 +217,10 @@ where
                                         mov = Cancelled;
                                     }
                                     if mov.is_ok() {
-                                        self.cache.moves.insert(at, (id, mov));
+                                        self.cache.moves.insert(to, (id, mov));
                                         //NOTE: Postponed
                                     } else {
-                                        self.events.send(src.ev(BotEvent::Collide(at)));
+                                        self.events.send(BotCollide { src, to });
                                     }
                                 }
                             }
@@ -243,12 +242,9 @@ where
     fn tick_death(&mut self) {
         for id in self.cache.deaths.iter() {
             if let Ok(bot) = self.bots.remove(*id) {
-                let src = match bot.cpu {
-                    Ok(cpu) => cpu.state().src(),
-                    Err(off) => BotSrc { id: *id, at: off.at },
-                };
+                let src = bot.src(*id);
                 self.map.set(src.at, Cell::Ground);
-                self.events.send(src.ev(BotEvent::Die));
+                self.events.send(BotDie { src });
             }
         }
         self.cache.deaths.clear();
@@ -277,16 +273,16 @@ where
 
             if valid && head.map_or(true, |at| self.map.get(at).is_empty()) {
                 // Move chain
-                while let Some(at) = it.next(ms) {
-                    let id = ms.remove(&at).unwrap().0;
+                while let Some(to) = it.next(ms) {
+                    let id = ms.remove(&to).unwrap().0;
                     if let Ok(bot) = self.bots.get_mut(id) {
                         if let Ok(cpu) = &mut bot.cpu {
                             let state = cpu.state_mut();
-                            debug_assert!(state.at_front() == at);
+                            debug_assert!(state.at_front() == to);
                             let src = state.src();
-                            self.map.set(at, Cell::Bot(id));
-                            state.at = at;
-                            self.events.send(src.ev(BotEvent::Move(at)));
+                            self.map.set(to, Cell::Bot(id));
+                            state.at = to;
+                            self.events.send(BotMove { src, to });
                         } else {
                             panic!("Bot off moved {:?} ???", id)
                         }
@@ -297,21 +293,19 @@ where
                 }
             } else {
                 // Cancel chain
-                while let Some(at) = it.next(ms) {
-                    let (id, state) = ms.get_mut(&at).unwrap();
+                while let Some(to) = it.next(ms) {
+                    let (id, state) = ms.get_mut(&to).unwrap();
                     *state = TryMoveState::Cancelled;
                     let id = *id;
                     if let Ok(bot) = self.bots.get(id) {
-                        let src = match &bot.cpu {
-                            Ok(cpu) => cpu.state().src(),
-                            Err(off) => BotSrc { id, at: off.at },
-                        };
-                        self.events.send(src.ev(BotEvent::Collide(at)));
+                        self.events.send(BotCollide { src: bot.src(id), to });
                     }
                 }
             }
         }
-        tracing::debug!(count = ms.len(), "cancelled moves");
+        if !ms.is_empty() {
+            tracing::debug!(count = ms.len(), "cancelled moves");
+        }
         ms.clear();
 
         #[inline(always)]
@@ -353,7 +347,7 @@ where
         let mut next_state = self.state;
         while let Some(command) = (self.commands)() {
             match command {
-                Command::State(v) => {
+                Command::ChangeState(v) => {
                     if next_state != State::Stopped {
                         next_state = v
                     }
@@ -373,26 +367,26 @@ where
                         cells: range.map(|h| self.map.get(h)).collect(),
                     });
                 }
-                Command::Spawn(program, at) => {
-                    let i: usize = program.into();
+                Command::Spawn(q) => {
+                    let i: usize = q.pid.into();
+                    let at = q.to;
                     if i >= self.programs.len() {
                         continue; //FIXME: Bad program
                     }
                     if !self.map.get(at).is_empty() {
                         continue; //FIXME: Bad pos
                     }
-                    let id = self.bots.insert(Bot {
-                        program,
+                    let bid = self.bots.insert(Bot {
+                        program: q.pid,
                         cpu: Err(bot::StateOff {
                             at,
                             facing: bulb::hex::Direction::Up,
                             fuel: 10_000,
                         }),
                     });
-                    self.map.set(at, Cell::Bot(id));
+                    self.map.set(at, Cell::Bot(bid));
                     self.with_tick();
-                    self.events.send(BotSrc { id, at }.ev(BotEvent::Spawn));
-                    //MAYBE: return id
+                    self.events.send(BotSpawn { src: BotSrc { bid, at } });
                 }
             }
         }
@@ -400,14 +394,16 @@ where
         if next_state != self.state {
             tracing::warn!(state = ?next_state);
             self.state = next_state;
-            self.events.send(Event::State(next_state));
+            self.events.send(StateChange(next_state));
         }
     }
 
     fn with_tick(&mut self) {
         if !self.in_tick {
-            self.events
-                .send(Event::TickStart(self.counter.into(), Utc::now().timestamp_millis().into()));
+            self.events.send(TickStart {
+                tid: self.counter.into(),
+                ts: Utc::now().timestamp_millis().into(),
+            });
             self.in_tick = true;
         }
     }
@@ -491,9 +487,10 @@ where
         tracing::trace!(?event);
         self.0(event);
     }
-    fn log(&mut self, src: &BotSrc, log: String) {
-        if let Some(log) = src.log(log) {
-            self.send(log)
+    #[inline]
+    fn log(&mut self, src: BotSrc, log: String) {
+        if !log.is_empty() {
+            self.send(BotLog { src, msg: log.into() })
         }
     }
 }

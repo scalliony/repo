@@ -8,6 +8,10 @@ edition = "2021"
 license = "MIT"
 repository = "https://github.com/scalliony/repo"
 
+[features]
+serde = ["dep:serde", "serde_repr"]
+
 [dependencies]
 bytes = "1"
-serde = { version = "1", optional = true }
+serde = { version = "1", features = ["derive"], optional = true }
+serde_repr = { version = "0.1", optional = true }
