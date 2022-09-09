@@ -13,35 +13,35 @@ build-dev *args:
   cargo build {{args}}
 
 # Run client (wasm) in browser
-run-web *args: copy-index _create-bundle-js (build-web args) (_installed "basic-http-server")
+run-web *args: (build-web args) (_installed "basic-http-server") (_bundle '' out_wasm_opt)
   basic-http-server dist
+# Bundle client for spa (wasm)
+bundle-web *args: (build-web args) (_bundle '\/assets\/' out_wasm_opt)
 # Build client (wasm)
-build-web *args: (build target_wasm args) (_installed "wasm-opt")
-  wasm-opt -Os --strip {{out_wasm}} -o {{dist_wasm}}
+build-web *args: (build target_wasm args)
+  npx wasm-opt -Os --strip {{out_wasm}} -o {{out_wasm_opt}}
 # Build client (wasm, no backtrace)
 build-web-abort:
   cargo +nightly build -r {{target_wasm}} -Z build-std=std,panic_abort -Z build-std-features=panic_immediate_abort
-  @cp {{out_wasm}} {{dist_wasm}}
 # Build client (wasm, dev)
 build-web-dev *args: (build-dev target_wasm args)
-  @cp {{out_wasm}} {{dist_wasm}}
 target_wasm := "--target wasm32-unknown-unknown"
-dist_wasm := "dist/scalliony.wasm"
 out_wasm := "../target/wasm32-unknown-unknown/release/scalliony-client.wasm"
+out_wasm_opt := "../target/wasm32-unknown-unknown/release/scalliony-client.opt.wasm"
 
 # Run client (.exe, dev) usefull in wsl
 run-win-dev *args: (run-dev "--target x86_64-pc-windows-gnu" args)
 
-@copy-index:
+@_bundle root='' wasm=out_wasm:
   mkdir -p dist
   cp src/index.html dist
-bundle-js:
-  wget -qO- https://raw.githubusercontent.com/not-fl3/miniquad/master/js/gl.js > dist/bundle.js
-  wget -qO- https://raw.githubusercontent.com/not-fl3/sapp-jsutils/master/js/sapp_jsutils.js >> dist/bundle.js
-  wget -qO- https://raw.githubusercontent.com/not-fl3/quad-net/master/js/quad-net.js >> dist/bundle.js
-  wget -qO- https://raw.githubusercontent.com/not-fl3/quad-snd/master/js/audio.js >> dist/bundle.js
-  npx uglify-js dist/bundle.js -c -m -o dist/bundle.js
-_create-bundle-js:
-  @test -f dist/bundle.js || just bundle-js
+  sed -i 's/{root}/{{root}}/g' dist/index.html
+  MQ_V=$(cargo metadata --format-version=1 | jq -r '.packages[] | select(.name == "macroquad") .version'); \
+  MQ_M=$(cargo metadata --format-version=1 | jq -r '.packages[] | select(.name == "macroquad") .manifest_path'); \
+  cp $(dirname $MQ_M)/js/mq_js_bundle.js dist/bundle.$MQ_V.js; \
+  sed -i "s/{js-id}/.$MQ_V/g" dist/index.html
+  WM_V=$(md5sum {{wasm}} | head -c8); \
+  cp {{wasm}} dist/game.$WM_V.wasm; \
+  sed -i "s/{wasm-id}/.$WM_V/g" dist/index.html
 _installed crate:
   @command -v {{crate}} || cargo install {{crate}} --locked

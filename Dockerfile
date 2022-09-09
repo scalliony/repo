@@ -1,19 +1,15 @@
-FROM alpine/git as git
-ARG COMMIT=main
+FROM rust as build
+RUN cargo install just
 RUN git clone https://github.com/scalliony/repo.git /repo
 WORKDIR /repo
+ARG COMMIT=main
 RUN git checkout ${COMMIT}
-
-FROM node AS web
-COPY --from=git /repo/web/ /
-RUN npm run build
-
-FROM rust AS server
-COPY --from=git /repo/ /
-RUN cargo build -p scalliony-server --release
+# TODO: remove
+RUN just build-wasm explorer
+RUN just build-web
 
 FROM debian:stable-slim
-COPY --from=web /dist .
-COPY --from=server /target/release/scalliony-server .
+COPY --from=build /client/dist .
+COPY --from=build /target/release/scalliony-server .
 CMD ["./scalliony-server"]
 EXPOSE 3000/tcp

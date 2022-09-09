@@ -18,7 +18,7 @@ impl State {
     fn ui<F: FnOnce(&egui::Context)>(&mut self, f: F) {
         let gl = unsafe { get_internal_gl() };
         repeat_all_miniquad_input(self, self.input);
-        self.mq.run(gl.quad_context, f);
+        self.mq.run(gl.quad_context, |_, egui| f(egui));
     }
     fn draw(&mut self) {
         let mut gl = unsafe { get_internal_gl() };
@@ -59,12 +59,12 @@ impl mq::EventHandler for State {
 
     fn draw(&mut self, _ctx: &mut mq::Context) {}
 
-    fn mouse_motion_event(&mut self, ctx: &mut mq::Context, x: f32, y: f32) {
-        self.mq.mouse_motion_event(ctx, x, y);
+    fn mouse_motion_event(&mut self, _: &mut mq::Context, x: f32, y: f32) {
+        self.mq.mouse_motion_event(x, y);
     }
 
-    fn mouse_wheel_event(&mut self, ctx: &mut mq::Context, dx: f32, dy: f32) {
-        self.mq.mouse_wheel_event(ctx, dx, dy);
+    fn mouse_wheel_event(&mut self, _: &mut mq::Context, dx: f32, dy: f32) {
+        self.mq.mouse_wheel_event(dx, dy);
     }
 
     fn mouse_button_down_event(

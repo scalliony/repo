@@ -21,8 +21,8 @@ engine = { path = "../engine", package = "scalliony-engine", version = "0.1.0", 
 quad-net = { version = "0.1", default-features = false, optional = true }
 serde_json = { version = "1", optional = true }
 macroquad = { version = "0.3", default-features = false, features = ["audio", "log-rs"] }
-egui-miniquad = "0.11"
-egui = "0.18"
+egui-miniquad = "0.12"
+egui = "0.19"
 chrono = { version = "0.4", default-features = false, features = ["std"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

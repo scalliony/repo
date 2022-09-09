@@ -7,7 +7,8 @@ Opensource RTS programming game using WebAssembly
 - [Built with](#built-with)
 - [Monorepo](#monorepo)
 - [Prerequisites](#prerequisites)
-- [Usage](#usage)
+- [Just play](#just-play)
+- [Multiplayer](#multiplayer)
   - [Authentication](#authentication)
   - [Log level](#log-level)
 - [Docker](#docker)
@@ -18,9 +19,9 @@ Opensource RTS programming game using WebAssembly
 ## Built with
 
 * Rust
-* TypeScript
 * Axum
 * Wasmtime
+* Macroquad
 * Love and insomnia
 
 ## Monorepo
@@ -28,22 +29,26 @@ Opensource RTS programming game using WebAssembly
 This project contains multiple folders:
 - [/api](./api): Bot programming API
 - [/bulb](./bulb): Shared types
-- [/client](./client): Native game client
+- [/client](./client): Game client
 - [/engine](./engine): Core game logic
 - [/server](./server): Game server
 - [/sys](./sys): System binding
-- [/web](./web): Web UI
 
 ## Prerequisites
 
 * Rustup
-* NPM
+* NPM <!-- TODO: remove -->
 
-## Usage
+## Just play
 
+- Install [just](https://github.com/casey/just): `cargo install just`
 - `git clone https://github.com/scalliony/repo.git`
+- Play: `just play`
+
+## Multiplayer
+
 - Copy and edit `.env.sample` to `.env`
-- `npm start`
+- `just play-web`
 - Visit http://localhost:3000
 
 ### Authentication
@@ -61,21 +66,21 @@ This project uses [RUST_LOG](https://rust-lang-nursery.github.io/rust-cookbook/d
 
 ## Docker
 
-From DockerHub
+<!-- TODO: From DockerHub
 ```sh
 docker run scalliony/server
-```
-[Dockerfile](Dockerfile) simply bundles following steps with a multi-stage image.
+``` -->
+[Dockerfile](Dockerfile) simply bundles previous steps with a multi-stage image.
 *No need to manually clone the full repo, copy just this Dockerfile*
 ```sh
-docker build -t scalliony --build-arg COMMIT=<SHA> - < Dockerfile
+docker build -t scalliony - < Dockerfile
 docker run scalliony
 ```
 
 ## Tests
 
 ```
-npm test
+just test
 ```
 
 ## License

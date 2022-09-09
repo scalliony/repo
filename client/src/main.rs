@@ -206,6 +206,9 @@ impl AsRef<str> for Code {
     }
 }
 impl egui::TextBuffer for Code {
+    fn as_str(&self) -> &str {
+        self.as_ref()
+    }
     fn is_mutable(&self) -> bool {
         matches!(self, Code::Text(_))
     }
