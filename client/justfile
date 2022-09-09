@@ -1,0 +1,47 @@
+default:
+  @just --list --unsorted
+
+# Run client
+run *args: (run-dev "-r" args)
+# Run client (dev)
+run-dev *args:
+  cargo run {{args}}
+# Build client
+build *args: (build-dev "-r" args)
+# Build client (dev)
+build-dev *args:
+  cargo build {{args}}
+
+# Run client (wasm) in browser
+run-web *args: copy-index _create-bundle-js (build-web args) (_installed "basic-http-server")
+  basic-http-server dist
+# Build client (wasm)
+build-web *args: (build target_wasm args) (_installed "wasm-opt")
+  wasm-opt -Os --strip {{out_wasm}} -o {{dist_wasm}}
+# Build client (wasm, no backtrace)
+build-web-abort:
+  cargo +nightly build -r {{target_wasm}} -Z build-std=std,panic_abort -Z build-std-features=panic_immediate_abort
+  @cp {{out_wasm}} {{dist_wasm}}
+# Build client (wasm, dev)
+build-web-dev *args: (build-dev target_wasm args)
+  @cp {{out_wasm}} {{dist_wasm}}
+target_wasm := "--target wasm32-unknown-unknown"
+dist_wasm := "dist/scalliony.wasm"
+out_wasm := "../target/wasm32-unknown-unknown/release/scalliony-client.wasm"
+
+# Run client (.exe, dev) usefull in wsl
+run-win-dev *args: (run-dev "--target x86_64-pc-windows-gnu" args)
+
+@copy-index:
+  mkdir -p dist
+  cp src/index.html dist
+bundle-js:
+  wget -qO- https://raw.githubusercontent.com/not-fl3/miniquad/master/js/gl.js > dist/bundle.js
+  wget -qO- https://raw.githubusercontent.com/not-fl3/sapp-jsutils/master/js/sapp_jsutils.js >> dist/bundle.js
+  wget -qO- https://raw.githubusercontent.com/not-fl3/quad-net/master/js/quad-net.js >> dist/bundle.js
+  wget -qO- https://raw.githubusercontent.com/not-fl3/quad-snd/master/js/audio.js >> dist/bundle.js
+  npx uglify-js dist/bundle.js -c -m -o dist/bundle.js
+_create-bundle-js:
+  @test -f dist/bundle.js || just bundle-js
+_installed crate:
+  @command -v {{crate}} || cargo install {{crate}} --locked
