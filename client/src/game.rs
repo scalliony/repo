@@ -1,12 +1,8 @@
 pub use super::client::Any as Client;
+use super::client::CompileReq;
 use super::util::*;
 use bulb::dto::*;
-use std::{
-    collections::{BTreeMap, HashMap},
-    sync::{Arc, Mutex},
-};
-
-//FIXME: HexRangeIter::new(view.center, view.rad as i32).zip(map.into_iter())
+use std::collections::{BTreeMap, HashMap};
 
 pub struct ViewTracker {
     at: HexRange,
@@ -151,21 +147,24 @@ impl AnimatedState {
 
 pub struct Programs {
     actual: Vec<ProgramId>,
-    pipe: Arc<Mutex<Vec<ProgramId>>>,
+    pending: Vec<CompileReq>,
 }
 impl Programs {
     pub fn new() -> Self {
-        Self { actual: Vec::default(), pipe: Arc::default() }
+        Self { actual: Vec::default(), pending: Vec::default() }
     }
-    pub fn compile(&self, client: &mut Client, code: Bytes) {
-        let pipe = self.pipe.clone();
-        todo!();
-        // client.send(Rpc::Compile(code));
+    pub fn compile(&mut self, client: &mut Client, code: Bytes) {
+        self.pending.push(client.compile(code));
     }
     pub fn update(&mut self) {
-        let pipe = &mut self.pipe.lock().unwrap();
-        self.actual.extend_from_slice(pipe.as_slice());
-        pipe.clear();
+        self.pending.retain_mut(|c| {
+            match c.try_recv() {
+                None => return true,
+                Some(Ok(id)) => self.actual.push(id),
+                Some(Err(err)) => error!("Compile Error: {:?}", err),
+            }
+            false
+        });
     }
 }
 impl AsRef<[ProgramId]> for Programs {

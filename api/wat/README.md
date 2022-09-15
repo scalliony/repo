@@ -8,4 +8,4 @@ Optionally compile it to wasm using [wabt](https://github.com/WebAssembly/wabt)'
 
 ## Content
 
-- [lib.wat](./lib.wat): Commented hello world
+- [explorer.wat](./explorer.wat): Commented explorer

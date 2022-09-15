@@ -57,3 +57,18 @@ pub fn lerp_f(a: F, b: F, t: F) -> F {
 pub fn lerp_hex(a: Hex, b: Hex, t: F) -> FracHex {
     FracHex::new(lerp_f(a.q() as F, b.q() as F, t) as f64, lerp_f(a.r() as F, b.r() as F, t) as f64)
 }
+
+pub fn dropped_bytes() -> Option<Vec<u8>> {
+    unsafe {
+        static mut DROP_CNT: usize = 0;
+        let ctx = get_internal_gl().quad_context;
+        if ctx.dropped_file_count() > DROP_CNT {
+            let v = ctx.dropped_file_bytes(DROP_CNT);
+            DROP_CNT += 1;
+            v
+        } else {
+            DROP_CNT = ctx.dropped_file_count();
+            None
+        }
+    }
+}

@@ -1,19 +1,34 @@
 use crate::game;
-use axum::{body::Body, http::Request};
-use axum_extra::routing::SpaRouter;
+use axum::{
+    body::Body,
+    http::{header, Request, StatusCode},
+    response::IntoResponse,
+    routing::{get_service, MethodRouter},
+};
 use std::net::SocketAddr;
 use tokio::signal;
 use tower::ServiceBuilder;
-use tower_http::{request_id::MakeRequestUuid, trace::TraceLayer, ServiceBuilderExt};
+use tower_http::{
+    request_id::MakeRequestUuid, services::ServeDir, set_header::SetResponseHeader,
+    trace::TraceLayer, ServiceBuilderExt,
+};
 
 pub type Router = axum::Router;
 
-pub fn spa() -> SpaRouter {
+pub fn assets() -> MethodRouter {
     let dir = std::env::var("ASSETS_DIR").unwrap_or_else(|_| "dist".into());
     if !std::path::Path::new(&dir).join("index.html").is_file() {
         tracing::warn!("no 'ASSETS_DIR' at {}", dir)
     }
-    SpaRouter::new("/assets", dir)
+    let srv = SetResponseHeader::if_not_present(
+        ServeDir::new(dir),
+        header::CACHE_CONTROL,
+        header::HeaderValue::from_static("public, max-age=86400"),
+    );
+    get_service(srv).handle_error(handle_error)
+}
+async fn handle_error(_err: std::io::Error) -> impl IntoResponse {
+    (StatusCode::INTERNAL_SERVER_ERROR, "Something went wrong...")
 }
 
 pub async fn serve(app: axum::Router<Body>, interface: game::InterfaceRef) {

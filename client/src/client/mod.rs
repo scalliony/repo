@@ -14,6 +14,12 @@ trait Client {
     fn connected(&self) -> bool {
         true
     }
+
+    fn compile(&mut self, code: Bytes) -> CompileReq;
+}
+pub type CompileReq = Box<dyn Compiling>;
+pub trait Compiling {
+    fn try_recv(&mut self) -> Option<CompileRes>;
 }
 
 pub enum Any {
@@ -24,14 +30,14 @@ pub enum Any {
 }
 impl Any {
     pub const HAS_ONLINE: bool = cfg!(feature = "online");
-    pub const HAS_OFFLINE: bool = cfg!(feature = "online");
+    pub const HAS_OFFLINE: bool = cfg!(feature = "offline");
 
-    pub fn new(url_or_local: Option<&str>) -> Result<Self, String> {
-        if let Some(url) = url_or_local {
+    pub fn new(domain_or_local: Option<(&str, bool)>) -> Result<Self, String> {
+        if let Some((domain, https)) = domain_or_local {
             #[cfg(not(feature = "online"))]
             return Err("Online mode unavailable".to_string());
             #[cfg(feature = "online")]
-            return Ok(Self::On(online::Client::new(url)?));
+            return Ok(Self::On(online::Client::new(domain, https)?));
         } else {
             #[cfg(not(feature = "offline"))]
             return Err("Offline mode unavailable".to_string());
@@ -70,6 +76,14 @@ impl Any {
             Self::Off(c) => c.connected(),
             #[cfg(feature = "online")]
             Self::On(c) => c.connected(),
+        }
+    }
+    pub fn compile(&mut self, code: Bytes) -> CompileReq {
+        match self {
+            #[cfg(feature = "offline")]
+            Self::Off(c) => c.compile(code),
+            #[cfg(feature = "online")]
+            Self::On(c) => c.compile(code),
         }
     }
 }

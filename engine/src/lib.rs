@@ -1,12 +1,14 @@
 mod api;
 mod bot;
 mod gen;
+mod helper;
 mod noise;
 use api::*;
-use bot::{Bot, GameMapTrait};
+use bot::Bot;
 pub use bulb::dto::{Event::*, *};
 use bulb::hex::{Angle, Hex};
 use chrono::Utc;
+pub use helper::*;
 use std::collections::{BTreeMap, HashMap};
 use sys::Result;
 use tracing::instrument;
@@ -14,11 +16,9 @@ use typed_index_collections::TiVec;
 
 pub const DEFAULT_TICK_DURATION_MS: u64 = 1000;
 
-pub struct Game<R, S> {
-    commands: R,
+pub struct Game<S> {
     events: EventSender<S>,
 
-    state: State,
     counter: u32,
     in_tick: bool,
 
@@ -29,23 +29,10 @@ pub struct Game<R, S> {
     map: GameMap,
     cache: GameCache,
 }
-impl<R, S> Game<R, S>
-where
-    R: FnMut() -> Option<Command>,
-    S: FnMut(Event),
-{
-    pub fn new(commands: R, events: S, paused: bool) -> Self {
-        let state = if paused {
-            tracing::warn!("game is paused");
-            State::Paused
-        } else {
-            State::Running
-        };
-
+impl<S: FnMut(Event)> Game<S> {
+    pub fn new(events: S) -> Self {
         Self {
-            commands,
             events: EventSender(events),
-            state,
             counter: 0,
             in_tick: false,
             vm: new_vm().unwrap(),
@@ -56,26 +43,8 @@ where
         }
     }
 
-    pub fn update(&mut self) -> State {
-        if self.state == State::Stopped {
-            return State::Stopped;
-        }
-
-        self.receive();
-        if self.state != State::Running {
-            return State::Paused;
-        }
-
-        self.tick();
-        self.in_tick = false;
-        self.counter += 1;
-
-        self.state
-    }
-
-    #[inline]
     #[instrument(skip_all, fields(id = self.counter))]
-    fn tick(&mut self) {
+    pub fn tick(&mut self) {
         self.with_tick();
 
         for (id, bot) in self.bots.iter_mut() {
@@ -88,6 +57,8 @@ where
 
         self.events.send(TickEnd);
         tracing::debug!("done");
+        self.in_tick = false;
+        self.counter += 1;
     }
     #[inline]
     #[instrument(level = "debug", name = "bot", skip_all, fields(id = gen::I::from(id)))]
@@ -341,61 +312,43 @@ where
         }
     }
 
-    #[inline]
-    #[instrument(level = "debug", name = "commands", skip_all)]
-    fn receive(&mut self) {
-        let mut next_state = self.state;
-        while let Some(command) = (self.commands)() {
-            match command {
-                Command::ChangeState(v) => {
-                    if next_state != State::Stopped {
-                        next_state = v
-                    }
-                }
-                Command::Compile(code, cb) => {
-                    let res = Program::new(code, &self.vm)
-                        .map(|program| self.programs.push_and_get_key(program))
-                        .map_err(|err| {
-                            Error::new("Failed to compile", err.root_cause().to_string())
-                        });
-                    cb.resolve(res)
-                }
-                Command::Map(r, cb) => {
-                    let range = r.center.range(r.rad as bulb::hex::I);
-                    cb.resolve(CellRange {
-                        range: r,
-                        cells: range.map(|h| self.map.get(h)).collect(),
-                    });
-                }
-                Command::Spawn(q) => {
-                    let i: usize = q.pid.into();
-                    let at = q.to;
-                    if i >= self.programs.len() {
-                        continue; //FIXME: Bad program
-                    }
-                    if !self.map.get(at).is_empty() {
-                        continue; //FIXME: Bad pos
-                    }
-                    let bid = self.bots.insert(Bot {
-                        program: q.pid,
-                        cpu: Err(bot::StateOff {
-                            at,
-                            facing: bulb::hex::Direction::Up,
-                            fuel: 10_000,
-                        }),
-                    });
-                    self.map.set(at, Cell::Bot(bid));
-                    self.with_tick();
-                    self.events.send(BotSpawn { src: BotSrc { bid, at } });
-                }
+    #[instrument(level = "trace", name = "command", skip_all)]
+    pub fn apply(&mut self, command: Command) {
+        match command {
+            Command::Compile(code, cb) => {
+                let res = Program::new(code, &self.vm)
+                    .map(|program| self.programs.push_and_get_key(program))
+                    .map_err(|err| Error::new("Failed to compile", err.root_cause().to_string()));
+                cb.resolve(res)
             }
+            Command::Map(r, cb) => {
+                let range = r.center.range(r.rad as bulb::hex::I);
+                cb.resolve(CellRange::new(r, &self.map));
+            }
+            Command::Spawn(q) => {
+                let i: usize = q.pid.into();
+                let at = q.to;
+                if i >= self.programs.len() {
+                    return; //FIXME: Bad program
+                }
+                if !self.map.get(at).is_empty() {
+                    return; //FIXME: Bad pos
+                }
+                let bid = self.bots.insert(Bot {
+                    program: q.pid,
+                    cpu: Err(bot::StateOff { at, facing: bulb::hex::Direction::Up, fuel: 10_000 }),
+                });
+                self.map.set(at, Cell::Bot(bid));
+                self.with_tick();
+                self.events.send(Event::BotSpawn { src: BotSrc { bid, at } });
+            }
+            Command::ChangeState(_) => unreachable!("Server command"),
         }
+    }
 
-        if next_state != self.state {
-            tracing::warn!(state = ?next_state);
-            self.state = next_state;
-            self.events.send(StateChange(next_state));
-        }
+    #[inline]
+    pub fn send(&mut self, e: Event) {
+        self.events.send(e)
     }
 
     fn with_tick(&mut self) {
@@ -420,14 +373,13 @@ impl GameMap {
         Self { grid: BTreeMap::new(), gen: MapGenerator::new(seed) }
     }
     fn set(&mut self, h: Hex, v: Cell) {
-        tracing::warn!("set {:?} {:?}", h, v);
         self.grid.insert(h, v);
     }
     fn drain_unchanged(&mut self) {
         self.grid.retain(|h, v| *v != self.gen.get(*h));
     }
 }
-impl GameMapTrait for GameMap {
+impl CellMap for GameMap {
     fn get(&self, h: Hex) -> Cell {
         if let Some(v) = self.grid.get(&h) {
             *v
@@ -479,10 +431,7 @@ impl TryMoveState {
 }
 
 struct EventSender<S>(S);
-impl<S> EventSender<S>
-where
-    S: FnMut(Event),
-{
+impl<S: FnMut(Event)> EventSender<S> {
     fn send(&mut self, event: Event) {
         tracing::trace!(?event);
         self.0(event);

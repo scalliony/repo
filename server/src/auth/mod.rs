@@ -74,10 +74,7 @@ struct ErrObj {
 }
 
 #[axum::async_trait]
-impl<B> FromRequest<B> for Claims
-where
-    B: Send,
-{
+impl<B: Send> FromRequest<B> for Claims {
     type Rejection = AuthRejection;
 
     async fn from_request(

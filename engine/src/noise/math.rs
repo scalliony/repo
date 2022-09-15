@@ -1,9 +1,6 @@
 use std::ops::{Add, Mul, Sub};
 #[inline(always)]
-pub(crate) fn from_fn<F, T, const N: usize>(mut cb: F) -> [T; N]
-where
-    F: FnMut(usize) -> T,
-{
+pub(crate) fn from_fn<T, F: FnMut(usize) -> T, const N: usize>(mut cb: F) -> [T; N] {
     let mut idx = 0;
     [(); N].map(|_| {
         let res = cb(idx);

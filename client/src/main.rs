@@ -16,7 +16,7 @@ async fn main() {
     });
 
     let mut client = game::Client::new(if game::Client::HAS_ONLINE {
-        Some("ws://localhost:3000/api/ws")
+        Some(("127.0.0.1:3000", false))
     } else {
         None
     })
@@ -29,9 +29,7 @@ async fn main() {
     let mut view = view::View::default();
     let mut view_tracker = game::ViewTracker::new();
 
-    let mut code = Code::Binary(
-        include_bytes!("../../target/wasm32-unknown-unknown/release/explorer.wasm").to_vec(),
-    );
+    let mut code = Code::default();
     let mut programs = game::Programs::new();
     let mut program: usize = 0;
     let mut spawn: Hex = Hex::default();
@@ -55,6 +53,10 @@ async fn main() {
         gui::ui(|ctx| {
             use egui::*;
             Window::new("Program Editor").show(ctx, |ui| {
+                if let Some(drop) = dropped_bytes() {
+                    code = String::from_utf8(drop)
+                        .map_or_else(|err| Code::Binary(err.into_bytes()), Code::Text)
+                }
                 ui.code_editor(&mut code);
                 if ui.add_enabled(!code.as_bytes().is_empty(), Button::new("Compile")).clicked() {
                     programs.compile(&mut client, std::mem::take(&mut code).into_bytes().into())

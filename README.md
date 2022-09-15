@@ -37,7 +37,7 @@ This project contains multiple folders:
 ## Prerequisites
 
 * Rustup
-* NPM <!-- TODO: remove -->
+* [jq](https://stedolan.github.io/jq/)
 
 ## Just play
 
@@ -49,14 +49,14 @@ This project contains multiple folders:
 
 - Copy and edit `.env.sample` to `.env`
 - `just play-web`
-- Visit http://localhost:3000
+- Visit http://127.0.0.1:3000
 
 ### Authentication
 
 Scalliony does not handle player's passwords but uses any compatible OAuth2 provider.
 Default configuration in [.env.sample](./.env.sample) uses [Github](https://docs.github.com/en/developers/apps/building-oauth-apps/creating-an-oauth-app) configured using environment variables `AUTH_GITHUB_CLIENT_ID` and `AUTH_GITHUB_CLIENT_SECRET`.
 
-Callback URL is `<domain>/auth/callback/github`. If your `<domain>` is not `http://localhost:3000`, you must defined `AUTH_BASE_URL` variable accordingly.
+Callback URL is `<domain>/auth/callback/github`. If your `<domain>` is not `http://127.0.0.1:3000`, you must defined `AUTH_BASE_URL` variable accordingly.
 
 Also replace `AUTH_JWT_SECRET` value with a random secret !
 
@@ -66,10 +66,9 @@ This project uses [RUST_LOG](https://rust-lang-nursery.github.io/rust-cookbook/d
 
 ## Docker
 
-<!-- TODO: From DockerHub
 ```sh
 docker run scalliony/server
-``` -->
+```
 [Dockerfile](Dockerfile) simply bundles previous steps with a multi-stage image.
 *No need to manually clone the full repo, copy just this Dockerfile*
 ```sh

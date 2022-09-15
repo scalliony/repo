@@ -2,7 +2,7 @@ use std::fmt::Debug;
 
 use super::gen;
 use bulb::{
-    dto::{BotId, BotSrc, Cell, ProgramId},
+    dto::{BotId, BotSrc, Cell, ProgramId, CellMap},
     hex::{Direction, Hex},
 };
 use sys::wasm::{self, spec::StoreRef};
@@ -94,7 +94,7 @@ impl State {
         BotSrc { bid: self.id, at: self.at }
     }
 
-    pub fn update(&mut self, map: &impl GameMapTrait) {
+    pub fn update(&mut self, map: &impl CellMap) {
         self.action = Self::default().action;
         self.front = map.get(self.at_front());
     }
@@ -102,7 +102,7 @@ impl State {
 impl Default for State {
     fn default() -> Self {
         Self {
-            id: u128::MAX.into(),
+            id: u64::MAX.into(),
             at: Hex::default(),
             facing: Direction::Up,
             front: Cell::Ground,
@@ -121,10 +121,6 @@ impl Debug for StateOff {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("StateOff {{ ... }}")
     }
-}
-
-pub trait GameMapTrait {
-    fn get(&self, h: Hex) -> Cell;
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

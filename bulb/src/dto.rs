@@ -1,4 +1,4 @@
-use crate::hex::{Direction, Hex};
+use crate::hex::{Direction, Hex, HexRangeIter};
 pub use bytes::Bytes;
 use std::fmt;
 
@@ -119,10 +119,7 @@ impl fmt::Display for Str {
 #[cfg(feature = "serde")]
 impl serde::Serialize for Str {
     #[inline]
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         self.as_ref().serialize(serializer)
     }
 }
@@ -176,13 +173,13 @@ impl fmt::Display for TickId {
 #[repr(transparent)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(transparent))]
-pub struct BotId(u128);
-impl From<u128> for BotId {
-    fn from(v: u128) -> Self {
+pub struct BotId(u64);
+impl From<u64> for BotId {
+    fn from(v: u64) -> Self {
         Self(v)
     }
 }
-impl From<BotId> for u128 {
+impl From<BotId> for u64 {
     fn from(b: BotId) -> Self {
         b.0
     }
@@ -220,7 +217,6 @@ impl From<ProgramId> for usize {
 }
 
 #[derive(PartialEq, Debug, Clone, Copy)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Cell {
     Ground,
     Wall,
@@ -291,18 +287,56 @@ pub struct HexRange {
     pub center: Hex,
     pub rad: u8,
 }
+impl HexRange {
+    pub fn iter(&self) -> HexRangeIter {
+        self.center.range(self.rad as i32)
+    }
+}
 
 #[derive(Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct CellRange {
     #[cfg_attr(feature = "serde", serde(flatten))]
-    pub range: HexRange,
-    //TODO: serialize to bytes
-    pub cells: Vec<Cell>,
+    range: HexRange,
+    pub cells: Str,
 }
 impl CellRange {
+    pub fn new(range: HexRange, cmap: &impl CellMap) -> Self {
+        let mut s = String::with_capacity(range.iter().len());
+        for c in range.iter().map(move |h| cmap.get(h)) {
+            use Cell::*;
+            match c {
+                Ground => s.push(' '),
+                Wall => s.push('x'),
+                Bot(BotId(v)) => {
+                    s.push('b');
+                    for i in (0..4).rev() {
+                        let p = ((v & ((u16::MAX as u64) << (i*u16::BITS))) >> i*u16::BITS) as u32 + 0xE000;
+                        s.push(unsafe { char::from_u32_unchecked(p) });
+                    }
+                }
+            }
+        }
+        Self { range, cells: s.into() }
+    }
     pub fn iter(&self) -> impl Iterator<Item = (Hex, Cell)> + '_ {
-        self.range.center.range(self.range.rad as i32).zip(self.cells.iter().cloned())
+        let mut chars = self.cells.as_ref().chars();
+        self.range.iter().map(move |h| {
+            use Cell::*;
+            (h, match chars.next().expect("End of cells") {
+                ' ' => Ground,
+                'x' => Wall,
+                'b' => {
+                    let mut v = 0u64;
+                    for _ in 0..4 {
+                        v += chars.next().expect("End of cells") as u64 - 0xE000;
+                        v <<= u16::BITS;
+                    }
+                    Bot(BotId(v))
+                },
+                _ => panic!("Invalid cells")
+            })
+        })
     }
 }
 impl fmt::Debug for CellRange {
@@ -312,6 +346,10 @@ impl fmt::Debug for CellRange {
             .field("rad", &self.range.rad)
             .finish_non_exhaustive()
     }
+}
+
+pub trait CellMap {
+    fn get(&self, h: Hex) -> Cell;
 }
 
 #[derive(Clone, Debug)]

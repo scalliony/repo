@@ -14,9 +14,9 @@ impl Id {
     }
     pub fn new(v: I) -> Self {
         let mut id = Self { index: 0, gen: 0 };
-        for i in 0..usize::BITS {
-            id.index |= ((v & 1u128 << (2 * i)) >> i) as usize;
-            id.gen |= ((v & 1u128 << (2 * i + 1)) >> (i + 1)) as usize;
+        for i in 0..I::BITS/2 {
+            id.index |= ((v & 1 << (2 * i)) >> i) as usize;
+            id.gen |= ((v & 1 << (2 * i + 1)) >> (i + 1)) as usize;
         }
         id
     }
@@ -24,14 +24,14 @@ impl Id {
         let mut v = 0;
         let a = self.index as I;
         let b = self.gen as I;
-        for i in 0..usize::BITS {
-            v |= (a & 1u128 << i) << i;
-            v |= (b & 1u128 << i) << (i + 1);
+        for i in 0..I::BITS/2 {
+            v |= (a & 1 << i) << i;
+            v |= (b & 1 << i) << (i + 1);
         }
         v
     }
 }
-pub type I = u128;
+pub type I = u64;
 impl From<Id> for I {
     fn from(id: Id) -> Self {
         id.pack()
@@ -50,10 +50,7 @@ pub struct Array<K, V> {
     free: VecDeque<usize>,
     _marker: PhantomData<fn(K) -> K>,
 }
-impl<K, V> Array<K, V>
-where
-    K: Into<Id> + From<Id>,
-{
+impl<K: Into<Id> + From<Id>, V> Array<K, V> {
     pub fn new() -> Self {
         Self {
             vals: Vec::<Option<V>>::new(),
@@ -152,10 +149,7 @@ where
         Ok(id)
     }
 }
-impl<K, V> std::ops::Index<K> for Array<K, V>
-where
-    K: Into<Id> + From<Id>,
-{
+impl<K: Into<Id> + From<Id>, V> std::ops::Index<K> for Array<K, V> {
     type Output = V;
 
     #[inline]
@@ -163,10 +157,7 @@ where
         self.get(index).expect("Index out of bound")
     }
 }
-impl<K, V> std::ops::IndexMut<K> for Array<K, V>
-where
-    K: Into<Id> + From<Id>,
-{
+impl<K: Into<Id> + From<Id>, V> std::ops::IndexMut<K> for Array<K, V> {
     #[inline]
     fn index_mut(&mut self, index: K) -> &mut Self::Output {
         self.get_mut(index).expect("Index out of bound")
@@ -179,10 +170,7 @@ pub struct MutSplit<'a, K, V> {
     right: &'a mut [Option<V>],
     _marker: PhantomData<fn(K) -> K>,
 }
-impl<K, V> MutSplit<'_, K, V>
-where
-    K: Into<Id>,
-{
+impl<K: Into<Id>, V> MutSplit<'_, K, V> {
     pub fn get(&self, key: K) -> Result<&V, NotFound> {
         let id = self.part_check(key)?;
         if id.index < self.left.len() {

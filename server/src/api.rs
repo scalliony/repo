@@ -63,7 +63,7 @@ async fn ws(socket: WebSocket, interface: InterfaceRef, user: auth::Claims) {
     use std::sync::{Arc, Mutex};
     let (mut sender, mut receiver) = futures::StreamExt::split(socket);
     let view = Arc::new(Mutex::new(Area::default()));
-    let (mut tx_self, mut rx_self) = tokio::sync::mpsc::unbounded_channel();
+    let (tx_self, mut rx_self) = tokio::sync::mpsc::unbounded_channel();
 
     tracing::debug!("connected");
     let is_admin = ADMIN.contains(&user.to_string());

@@ -15,7 +15,7 @@ pub fn run() -> InterfaceRef {
     let (commands_tx, mut commands_rx) = mpsc::unbounded_channel();
     let (events_tx, events_rx) = broadcast::channel(128);
 
-    let mut game = Game::new(
+    let mut game = GameState::new(
         move || commands_rx.try_recv().ok(),
         move |v: Event| _ = events_tx.send(v),
         paused,

@@ -41,7 +41,7 @@ impl Provider {
     fn redirect_url(name: &str) -> RedirectUrl {
         let mut base = ENV_PREFIX.to_string();
         base.push_str("BASE_URL");
-        base = std::env::var(base).unwrap_or_else(|_| "http://localhost:3000/auth".into());
+        base = std::env::var(base).unwrap_or_else(|_| "http://127.0.0.1:3000/auth".into());
         base.push_str("/callback/");
         base.push_str(name);
         RedirectUrl::new(base).unwrap()
@@ -140,10 +140,7 @@ pub enum Error {
     Unauthorized,
 }
 impl Error {
-    fn internal<E>(err: E) -> Self
-    where
-        E: std::error::Error,
-    {
+    fn internal<E: std::error::Error>(err: E) -> Self {
         tracing::warn!(%err);
         Self::Internal
     }

@@ -11,7 +11,7 @@ client *args:
 play-web: build-web
   just serve
 # Build web client
-build-web: (client "bundle-web -F online")
+build-web: (client "build-web -F online")
 
 # Run server
 serve *args:
@@ -24,3 +24,7 @@ build-hello-wasi:
   cargo +nightly build -p hello-wasi --release --target wasm32-wasi -Z build-std=std,panic_abort -Z build-std-features=panic_immediate_abort
 build-wasm +args:
   cargo build --release --target wasm32-unknown-unknown -p {{args}}
+
+# Run tests
+test:
+  cargo test

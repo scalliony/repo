@@ -9,7 +9,7 @@ license = "MIT"
 repository = "https://github.com/scalliony/repo"
 
 [features]
-serde = ["dep:serde", "serde_repr"]
+serde = ["dep:serde", "serde_repr", "bytes/serde"]
 
 [dependencies]
 bytes = "1"

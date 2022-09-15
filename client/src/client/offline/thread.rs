@@ -1,6 +1,6 @@
 use engine::*;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::{sync::mpsc, thread};
 
@@ -20,7 +20,7 @@ impl Client {
         let tick_ms = Arc::new(AtomicU64::new(DEFAULT_TICK_DURATION_MS));
 
         let evs = events_tx.clone();
-        let mut game = Game::new(
+        let mut game = GameState::new(
             move || commands_rx.try_recv().ok(),
             move |v: Event| {
                 _ = evs.send(v);
@@ -62,11 +62,27 @@ impl super::super::Client for Client {
             Rpc::Spawn(q) => Some(Command::Spawn(q)),
             Rpc::Map(q) => {
                 let evs = self.events_tx.clone();
-                Some(Command::Map(q, Promise::new(move |cr| _ = evs.send(Event::Cells(cr)))))
+                Some(Command::Map(q, Promise::new(move |cr| { _ = evs.send(Event::Cells(cr)); })))
             }
             Rpc::SetView { .. } => None,
         } {
             _ = self.commands.send(cmd);
         }
+    }
+
+    fn compile(&mut self, code: Bytes) -> super::super::CompileReq {
+        let rx = CompileSync::default();
+        let tx = rx.clone();
+        _ = self
+            .commands
+            .send(Command::Compile(code, Promise::new(move |res| *tx.lock().unwrap() = Some(res))));
+        Box::new(rx)
+    }
+}
+
+type CompileSync = Arc<Mutex<Option<CompileRes>>>;
+impl super::super::Compiling for CompileSync {
+    fn try_recv(&mut self) -> Option<CompileRes> {
+        self.lock().unwrap().take()
     }
 }

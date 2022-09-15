@@ -129,10 +129,7 @@ impl<T: 'static> Linker<WasiStore<T>> {
 /// Module validated with linker
 #[repr(transparent)]
 pub struct Template<S>(wasmtime::InstancePre<S>);
-impl<S> Template<S>
-where
-    S: spec::Store,
-{
+impl<S: spec::Store> Template<S> {
     pub fn new(linker: &Linker<S>, bytes: impl AsRef<[u8]>, data: S::T) -> Result<Self> {
         let module = wasmtime::Module::new(linker.0.engine(), bytes)?;
         let inner = linker
@@ -170,10 +167,7 @@ where
 
 pub trait IntoStore {}
 pub struct Instance<S>(wasmtime::Instance, wasmtime::Store<S>);
-impl<S> Instance<S>
-where
-    S: spec::Store,
-{
+impl<S: spec::Store> Instance<S> {
     pub fn new(tpl: &Template<S>, data: S::T, fuel: u64) -> Self {
         let mut store = wasmtime::Store::new(tpl.0.module().engine(), S::new(data));
         store.add_fuel(fuel).unwrap();
