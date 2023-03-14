@@ -11,7 +11,10 @@ pub struct View {
 }
 impl Default for View {
     fn default() -> Self {
-        Self { rad: 5., center: FracHex::default() }
+        Self {
+            rad: 5.,
+            center: FracHex::default(),
+        }
     }
 }
 impl View {
@@ -47,10 +50,17 @@ impl View {
     }
 
     pub fn round(&self) -> HexRange {
-        HexRange { center: self.center.into(), rad: self.rad as u8 }
+        HexRange {
+            center: self.center.into(),
+            rad: self.rad as u8,
+        }
     }
     pub fn iter(&self, center: Pos, range: Size) -> (Size, HexRangeIter, Mapper) {
-        let rad = if opts::SLIDE { self.rad } else { self.rad.round() };
+        let rad = if opts::SLIDE {
+            self.rad
+        } else {
+            self.rad.round()
+        };
         let size = Self::unit_rad(rad, range);
         let center_h: Hex = self.center.into();
 

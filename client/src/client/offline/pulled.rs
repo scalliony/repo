@@ -23,7 +23,12 @@ impl Client {
         let send: S = Box::new(move |v: Event| sender.borrow_mut().push_back(v));
         let game = Game::new(receive, send, false);
 
-        Self { game, store, tick_acc_ms: 0., tick_ms: DEFAULT_TICK_DURATION_MS }
+        Self {
+            game,
+            store,
+            tick_acc_ms: 0.,
+            tick_ms: DEFAULT_TICK_DURATION_MS,
+        }
     }
 }
 impl super::super::Client for Client {
@@ -60,27 +65,10 @@ impl super::super::Client for Client {
             self.store.commands.borrow_mut().push_back(cmd);
         }
     }
-
-    fn compile(&mut self, code: Bytes) -> super::super::CompileReq {
-        let rx = CompileSync::default();
-        let tx = rx.clone();
-        self.store
-            .commands
-            .borrow_mut()
-            .push_back(Command::Compile(code, Promise::new(move |res| *tx.borrow_mut() = Some(res))));
-        Box::new(rx)
-    }
 }
 
 #[derive(Default)]
 struct ClientStore {
     commands: Rc<RefCell<VecDeque<Command>>>,
     events: Rc<RefCell<VecDeque<Event>>>,
-}
-
-type CompileSync = Rc<Option<CompileRes>>;
-impl super::super::Compiling for CompileSync {
-    fn try_recv(&mut self) -> Option<CompileRes> {
-        self.borrow_mut().take()
-    }
 }

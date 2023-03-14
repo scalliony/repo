@@ -18,10 +18,10 @@ anyhow = "1"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 js-sys = "0.3"
-wasm-instrument = "0.2"
+wasm-instrument = "0.4"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 # Exclude cache since ztd-sys is a bit heavy
-wasmtime = { version = "0.40", default-features = false, features = ["cranelift", "wat", "parallel-compilation", "pooling-allocator", "memory-init-cow"] }
-wasmtime-wasi = "0.40"
-wasi-common = "0.40"
+wasmtime = { version = "6", default-features = false, features = ["cranelift", "wat", "parallel-compilation", "pooling-allocator"] }
+wasmtime-wasi = "6"
+wasi-common = "6"

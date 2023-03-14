@@ -59,13 +59,23 @@ fn new_cookie<'c, V>(value: V) -> Cookie<'c>
 where
     V: Into<std::borrow::Cow<'c, str>>,
 {
-    Cookie::build(COOKIE_NAME, value).path("/").http_only(true).permanent().finish()
+    Cookie::build(COOKIE_NAME, value)
+        .path("/")
+        .http_only(true)
+        .permanent()
+        .finish()
 }
 
 pub struct AuthRejection;
 impl IntoResponse for AuthRejection {
     fn into_response(self) -> Response {
-        (StatusCode::UNAUTHORIZED, Json(ErrObj { err: "Wrong credentials" })).into_response()
+        (
+            StatusCode::UNAUTHORIZED,
+            Json(ErrObj {
+                err: "Wrong credentials",
+            }),
+        )
+            .into_response()
     }
 }
 #[derive(Serialize)]
@@ -87,11 +97,16 @@ impl<B: Send> FromRequest<B> for Claims {
             )
             .await;
         let jwt = beader.map(|b| b.token().to_owned()).or_else(|_| {
-            jar.get(COOKIE_NAME).map(|c| c.value().to_owned()).ok_or(Self::Rejection {})
+            jar.get(COOKIE_NAME)
+                .map(|c| c.value().to_owned())
+                .ok_or(Self::Rejection {})
         })?;
         let state = req.extensions().get::<StateRef>().unwrap();
 
-        let claims = state.jwks.decode::<Claims>(&jwt).or(Err(Self::Rejection {}))?;
+        let claims = state
+            .jwks
+            .decode::<Claims>(&jwt)
+            .or(Err(Self::Rejection {}))?;
         Ok(claims)
     }
 }
@@ -100,12 +115,9 @@ async fn list(Extension(state): Extension<StateRef>) -> impl IntoResponse {
     Json::<Vec<_>>(state.providers.keys().map(|s| s.to_owned()).collect())
 }
 async fn list_html(Extension(state): Extension<StateRef>) -> impl IntoResponse {
-    Html(
-        state
-            .providers
-            .keys()
-            .fold(String::new(), |acc, s| acc + "<a href=\"./login/" + s + "\">" + s + "</a>&nbsp"),
-    )
+    Html(state.providers.keys().fold(String::new(), |acc, s| {
+        acc + "<a href=\"./login/" + s + "\">" + s + "</a>&nbsp"
+    }))
 }
 
 async fn logout(jar: CookieJar) -> impl IntoResponse {
@@ -155,7 +167,11 @@ async fn callback(
 
         let jwt = state
             .jwks
-            .encode(&Claims { iss: user.provider, id: user.id, exp: user.expires.timestamp() })
+            .encode(&Claims {
+                iss: user.provider,
+                id: user.id,
+                exp: user.expires.timestamp(),
+            })
             .unwrap();
 
         (jar.add(new_cookie(jwt)), Redirect::to("/")).into_response()

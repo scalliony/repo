@@ -9,12 +9,20 @@ pub const TAU: F = std::f32::consts::PI * 2.;
 
 pub fn draw_cell(center: Pos, rad: Size, color: Color) {
     let mut vertices = Vec::<Vertex>::with_capacity(8);
-    vertices.push(Vertex { position: (center, 0.).into(), uv: (0., 0.).into(), color });
+    vertices.push(Vertex {
+        position: (center, 0.).into(),
+        uv: (0., 0.).into(),
+        color,
+    });
     for i in 0..=6 {
         let r = i as F * TAU / 6.;
         let s = Pos::from((r.cos(), r.sin()));
         let p = center + rad * s;
-        vertices.push(Vertex { position: (p, 0.).into(), uv: s, color });
+        vertices.push(Vertex {
+            position: (p, 0.).into(),
+            uv: s,
+            color,
+        });
     }
 
     let mut indices = Vec::<u16>::with_capacity(18);
@@ -22,7 +30,11 @@ pub fn draw_cell(center: Pos, rad: Size, color: Color) {
         indices.extend_from_slice(&[0, i as u16 + 1, i as u16 + 2]);
     }
 
-    draw_mesh(&Mesh { vertices, indices, texture: None });
+    draw_mesh(&Mesh {
+        vertices,
+        indices,
+        texture: None,
+    });
 }
 pub fn draw_border(center: Pos, rad: Size, color: Color) {
     if super::opts::GRID {
@@ -42,7 +54,10 @@ pub type Pos = glam::Vec2;
 pub type Size = Pos;
 #[inline]
 pub fn to_point(pos: Pos) -> Point {
-    Point { x: pos.x as f64, y: pos.y as f64 }
+    Point {
+        x: pos.x as f64,
+        y: pos.y as f64,
+    }
 }
 #[inline]
 pub fn to_pos(point: Point) -> Pos {
@@ -55,7 +70,10 @@ pub fn lerp_f(a: F, b: F, t: F) -> F {
 }
 #[inline]
 pub fn lerp_hex(a: Hex, b: Hex, t: F) -> FracHex {
-    FracHex::new(lerp_f(a.q() as F, b.q() as F, t) as f64, lerp_f(a.r() as F, b.r() as F, t) as f64)
+    FracHex::new(
+        lerp_f(a.q() as F, b.q() as F, t) as f64,
+        lerp_f(a.r() as F, b.r() as F, t) as f64,
+    )
 }
 
 pub fn dropped_bytes() -> Option<Vec<u8>> {

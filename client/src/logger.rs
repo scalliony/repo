@@ -3,7 +3,10 @@ use macroquad::logging::*;
 #[inline(always)]
 pub fn init() {
     #[cfg(not(target_arch = "wasm32"))]
-    env_logger::builder().filter_level(LevelFilter::Info).parse_default_env().init();
+    env_logger::builder()
+        .filter_level(LevelFilter::Info)
+        .parse_default_env()
+        .init();
 
     #[cfg(target_arch = "wasm32")]
     {

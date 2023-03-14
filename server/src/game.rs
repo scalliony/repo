@@ -1,10 +1,11 @@
 pub use engine::*;
 use std::{thread, time::Duration};
-use tokio::sync::{broadcast, mpsc, oneshot};
+use tokio::sync::{broadcast, mpsc};
 
 pub fn run() -> InterfaceRef {
     let paused = std::env::var("GAME_PAUSED").map_or(false, |v| {
-        v.parse().unwrap_or_else(|_| v.parse::<u8>().expect("Expect a bool for GAME_PAUSED") != 0)
+        v.parse()
+            .unwrap_or_else(|_| v.parse::<u8>().expect("Expect a bool for GAME_PAUSED") != 0)
     });
     let tick_time = Duration::from_millis(
         std::env::var("GAME_TICK_MS").map_or(DEFAULT_TICK_DURATION_MS, |v| {
@@ -35,14 +36,6 @@ pub fn run() -> InterfaceRef {
         events: events_rx,
         thread: Some(thread),
     })
-}
-
-pub fn compile_command(code: Bytes) -> (Command, oneshot::Receiver<CompileRes>) {
-    let (tx, rx) = oneshot::channel();
-    let cb = Promise::new(move |v| {
-        _ = tx.send(v);
-    });
-    (Command::Compile(code, cb), rx)
 }
 
 pub struct Interface {

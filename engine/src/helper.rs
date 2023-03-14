@@ -18,7 +18,11 @@ where
         } else {
             State::Running
         };
-        Self { game: Game::new(events), commands, state }
+        Self {
+            game: Game::new(events),
+            commands,
+            state,
+        }
     }
 
     pub fn update(&mut self) -> State {

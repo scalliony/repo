@@ -19,11 +19,8 @@ run-web *args: (build-web args) (_installed "basic-http-server")
   basic-http-server dist
 # Build client (wasm)
 build-web *args: (build target_wasm args) (_wasm-opt out_wasm out_wasm_opt) (_bundle out_wasm_opt)
-_wasm-opt in out:
-  @PATH=$PATH:../target command -v wasm-opt || (echo "Downloading wasm-opt..." && \
-  wget -qO- https://github.com/WebAssembly/binaryen/releases/download/version_110/binaryen-version_110-x86_64-linux.tar.gz | \
-  tar -xz -C ../target --xform='s,.*/,,' binaryen-version_110/bin/wasm-opt)
-  PATH=$PATH:../target wasm-opt -Os --strip {{in}} -o {{out}}
+_wasm-opt in out: (_installed "wasm-opt")
+  wasm-opt -Os --strip {{in}} -o {{out}}
 # Build client (wasm, no backtrace)
 build-web-abort *args: (_build-z-abort "-r" target_wasm args) _bundle
 # Build client (wasm, dev)
@@ -46,4 +43,4 @@ run-win-dev *args: (run-dev "--target x86_64-pc-windows-gnu" args)
   cp {{wasm}} dist/game.$WM_V.wasm; \
   sed -i "s/{wasm}/game.$WM_V.wasm/g" dist/index.html
 _installed crate:
-  @command -v {{crate}} || cargo install {{crate}} --locked
+  @command -v {{crate}} || (echo "Installing {{crate}}..." && cargo install {{crate}} --locked)

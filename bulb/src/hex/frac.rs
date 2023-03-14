@@ -18,42 +18,60 @@ impl Add for Point {
     type Output = Self;
     #[inline]
     fn add(self, v: Self) -> Self {
-        Self { x: self.x + v.x, y: self.y + v.y }
+        Self {
+            x: self.x + v.x,
+            y: self.y + v.y,
+        }
     }
 }
 impl Sub for Point {
     type Output = Self;
     #[inline]
     fn sub(self, v: Self) -> Self {
-        Self { x: self.x - v.x, y: self.y - v.y }
+        Self {
+            x: self.x - v.x,
+            y: self.y - v.y,
+        }
     }
 }
 impl Mul for Point {
     type Output = Self;
     #[inline]
     fn mul(self, v: Self) -> Self {
-        Self { x: self.x * v.x, y: self.y * v.y }
+        Self {
+            x: self.x * v.x,
+            y: self.y * v.y,
+        }
     }
 }
 impl Div for Point {
     type Output = Self;
     #[inline]
     fn div(self, v: Self) -> Self {
-        Self { x: self.x / v.x, y: self.y / v.y }
+        Self {
+            x: self.x / v.x,
+            y: self.y / v.y,
+        }
     }
 }
 impl Mul<F> for Point {
     type Output = Self;
     #[inline]
     fn mul(self, k: F) -> Self {
-        Self { x: self.x * k, y: self.y * k }
+        Self {
+            x: self.x * k,
+            y: self.y * k,
+        }
     }
 }
 impl Div<F> for Point {
     type Output = Self;
     #[inline]
     fn div(self, k: F) -> Self {
-        Self { x: self.x / k, y: self.y / k }
+        Self {
+            x: self.x / k,
+            y: self.y / k,
+        }
     }
 }
 
@@ -66,7 +84,10 @@ impl From<(F, F)> for Point {
 impl From<FracHex> for Point {
     fn from(h: FracHex) -> Self {
         //NOTE: y sign flipped to put +y up
-        Self { x: 3. / 2. * h.q(), y: -SQRT3 / 2. * h.q() + -SQRT3 * h.r() }
+        Self {
+            x: 3. / 2. * h.q(),
+            y: -SQRT3 / 2. * h.q() + -SQRT3 * h.r(),
+        }
     }
 }
 impl From<Point> for FracHex {

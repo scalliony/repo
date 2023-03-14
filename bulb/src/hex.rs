@@ -101,7 +101,12 @@ pub struct HexRangeIter {
 impl HexRangeIter {
     pub fn new(center: Hex, rad: I) -> Self {
         assert!(rad >= 0);
-        Self { center, cur: Hex(-rad, 0), len: 3 * rad as usize * (rad as usize + 1) + 1, rad }
+        Self {
+            center,
+            cur: Hex(-rad, 0),
+            len: 3 * rad as usize * (rad as usize + 1) + 1,
+            rad,
+        }
     }
 }
 impl Iterator for HexRangeIter {
@@ -145,7 +150,10 @@ impl ExactSizeIterator for HexRangeIter {
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 #[repr(u8)]
-#[cfg_attr(feature = "serde", derive(serde_repr::Serialize_repr, serde_repr::Deserialize_repr))]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde_repr::Serialize_repr, serde_repr::Deserialize_repr)
+)]
 pub enum Direction {
     Up = 0,
     UpRight,
@@ -155,8 +163,14 @@ pub enum Direction {
     UpLeft,
 }
 impl Direction {
-    const ALL: [Self; 6] =
-        [Self::Up, Self::UpRight, Self::DownRight, Self::Down, Self::DownLeft, Self::UpLeft];
+    const ALL: [Self; 6] = [
+        Self::Up,
+        Self::UpRight,
+        Self::DownRight,
+        Self::Down,
+        Self::DownLeft,
+        Self::UpLeft,
+    ];
     pub fn all() -> &'static [Self; 6] {
         &Self::ALL
     }
@@ -165,8 +179,14 @@ impl Direction {
     }
 }
 impl Hex {
-    const DIRECTIONS: [Self; 6] =
-        [Self(0, 1), Self(1, 0), Self(1, -1), Self(0, -1), Self(-1, 0), Self(-1, 1)];
+    const DIRECTIONS: [Self; 6] = [
+        Self(0, 1),
+        Self(1, 0),
+        Self(1, -1),
+        Self(0, -1),
+        Self(-1, 0),
+        Self(-1, 1),
+    ];
     /// Unit vector for each direction
     /// * `r` in Up *(like y)*
     /// * `q` in UpRight *(like x + y/2)*

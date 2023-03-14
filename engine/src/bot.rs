@@ -2,7 +2,7 @@ use std::fmt::Debug;
 
 use super::gen;
 use bulb::{
-    dto::{BotId, BotSrc, Cell, ProgramId, CellMap},
+    dto::{BotId, BotSrc, Cell, CellMap, ProgramId},
     hex::{Direction, Hex},
 };
 use sys::wasm::{self, spec::StoreRef};
@@ -35,16 +35,20 @@ impl Cpu {
     #[cold]
     #[inline]
     #[instrument(level = "trace", skip_all)]
-    pub fn boot(tpl: &mut Template, state: State, fuel: u64) -> Result<Self, (String, wasm::Trap)> {
+    pub fn boot(
+        tpl: &mut Template,
+        state: State,
+        fuel: u64,
+    ) -> Result<Self, (String, wasm::Error)> {
         let (mut process, res) = wasm::Instance::started(tpl, state, fuel);
-        if let Err(trap) = res {
-            return Err((process.store_mut().read_log(), trap));
+        if let Err(err) = res {
+            return Err((process.store_mut().read_log(), err));
         }
         let tick = process.get_func::<(), ()>("tick").unwrap();
         Ok(Self { process, tick })
     }
     #[inline]
-    pub fn tick(&mut self) -> Result<(), wasm::Trap> {
+    pub fn tick(&mut self) -> Result<(), wasm::Error> {
         self.process.call(&self.tick, ())
     }
     #[inline]
@@ -81,17 +85,29 @@ pub struct State {
 pub type Store = wasm::WasiStore<State>;
 impl State {
     pub fn boot(id: BotId, off: &StateOff) -> Self {
-        Self { id, at: off.at, facing: off.facing, ..Default::default() }
+        Self {
+            id,
+            at: off.at,
+            facing: off.facing,
+            ..Default::default()
+        }
     }
     pub fn shutdown(&self, fuel: u64) -> StateOff {
-        StateOff { at: self.at, facing: self.facing, fuel }
+        StateOff {
+            at: self.at,
+            facing: self.facing,
+            fuel,
+        }
     }
 
     pub fn at_front(&self) -> Hex {
         self.at + self.facing.into()
     }
     pub fn src(&self) -> BotSrc {
-        BotSrc { bid: self.id, at: self.at }
+        BotSrc {
+            bid: self.id,
+            at: self.at,
+        }
     }
 
     pub fn update(&mut self, map: &impl CellMap) {
@@ -100,6 +116,7 @@ impl State {
     }
 }
 impl Default for State {
+    //MAYBE: remove
     fn default() -> Self {
         Self {
             id: u64::MAX.into(),

@@ -37,19 +37,21 @@ pub async fn serve(app: axum::Router<Body>, interface: game::InterfaceRef) {
         //.rate / concurrency limit
         //.request_body_limit
         .set_x_request_id(MakeRequestUuid)
-        .layer(TraceLayer::new_for_http().make_span_with(|request: &Request<Body>| {
-            let id = request
-                .headers()
-                .get("x-request-id")
-                .map(|h| h.to_str().unwrap_or_default())
-                .unwrap_or_default();
-            tracing::debug_span!(
-                "request",
-                method = %request.method(),
-                uri = %request.uri(),
-                id = %id,
-            )
-        }))
+        .layer(
+            TraceLayer::new_for_http().make_span_with(|request: &Request<Body>| {
+                let id = request
+                    .headers()
+                    .get("x-request-id")
+                    .map(|h| h.to_str().unwrap_or_default())
+                    .unwrap_or_default();
+                tracing::debug_span!(
+                    "request",
+                    method = %request.method(),
+                    uri = %request.uri(),
+                    id = %id,
+                )
+            }),
+        )
         //.compression
         .propagate_x_request_id();
 
@@ -71,7 +73,9 @@ pub async fn serve(app: axum::Router<Body>, interface: game::InterfaceRef) {
 
 async fn shutdown_signal() {
     let ctrl_c = async {
-        signal::ctrl_c().await.expect("failed to install Ctrl+C handler");
+        signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
     };
 
     #[cfg(unix)]

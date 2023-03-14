@@ -41,6 +41,7 @@ This project contains multiple folders:
 
 ## Just play
 
+- Install [rustup](https://rustup.rs/)
 - Install [just](https://github.com/casey/just): `cargo install just`
 - `git clone https://github.com/scalliony/repo.git`
 - Play: `just play`

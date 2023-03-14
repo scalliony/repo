@@ -48,6 +48,14 @@ pub enum Event {
         to: Hex,
     },
     Cells(CellRange),
+    ProgramAdd {
+        pid: ProgramId,
+        cid: CompileId,
+    },
+    CompileError {
+        cid: CompileId,
+        err: Error,
+    },
 }
 impl Event {
     pub fn src(&self) -> Option<&BotSrc> {
@@ -60,7 +68,12 @@ impl Event {
             BotRotate { src, .. } => Some(src),
             BotMove { src, .. } => Some(src),
             BotCollide { src, .. } => Some(src),
-            StateChange { .. } | TickStart { .. } | TickEnd | Cells { .. } => None,
+            StateChange { .. }
+            | TickStart { .. }
+            | TickEnd
+            | Cells { .. }
+            | ProgramAdd { .. }
+            | CompileError { .. } => None,
         }
     }
 }
@@ -83,6 +96,7 @@ pub enum Rpc {
     Map(HexRange),
     Spawn(SpawnBody),
     ChangeState(State),
+    Compile { cid: CompileId, code: Bytes },
 }
 
 /// A cheaply clonable readonly String
@@ -216,6 +230,9 @@ impl From<ProgramId> for usize {
     }
 }
 
+/// Compilation request identifier
+pub type CompileId = u32;
+
 #[derive(PartialEq, Debug, Clone, Copy)]
 pub enum Cell {
     Ground,
@@ -237,7 +254,10 @@ pub struct Error {
 }
 impl Error {
     pub fn new(ctx: &'static str, err: String) -> Self {
-        Self { ctx: ctx.into(), err: err.into() }
+        Self {
+            ctx: ctx.into(),
+            err: err.into(),
+        }
     }
 }
 
@@ -311,31 +331,39 @@ impl CellRange {
                 Bot(BotId(v)) => {
                     s.push('b');
                     for i in (0..4).rev() {
-                        let p = ((v & ((u16::MAX as u64) << (i*u16::BITS))) >> i*u16::BITS) as u32 + 0xE000;
+                        let p = ((v & ((u16::MAX as u64) << (i * u16::BITS))) >> i * u16::BITS)
+                            as u32
+                            + 0xE000;
                         s.push(unsafe { char::from_u32_unchecked(p) });
                     }
                 }
             }
         }
-        Self { range, cells: s.into() }
+        Self {
+            range,
+            cells: s.into(),
+        }
     }
     pub fn iter(&self) -> impl Iterator<Item = (Hex, Cell)> + '_ {
         let mut chars = self.cells.as_ref().chars();
         self.range.iter().map(move |h| {
             use Cell::*;
-            (h, match chars.next().expect("End of cells") {
-                ' ' => Ground,
-                'x' => Wall,
-                'b' => {
-                    let mut v = 0u64;
-                    for _ in 0..4 {
-                        v += chars.next().expect("End of cells") as u64 - 0xE000;
-                        v <<= u16::BITS;
+            (
+                h,
+                match chars.next().expect("End of cells") {
+                    ' ' => Ground,
+                    'x' => Wall,
+                    'b' => {
+                        let mut v = 0u64;
+                        for _ in 0..4 {
+                            v += chars.next().expect("End of cells") as u64 - 0xE000;
+                            v <<= u16::BITS;
+                        }
+                        Bot(BotId(v))
                     }
-                    Bot(BotId(v))
+                    _ => panic!("Invalid cells"),
                 },
-                _ => panic!("Invalid cells")
-            })
+            )
         })
     }
 }

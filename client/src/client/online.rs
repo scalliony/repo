@@ -32,20 +32,4 @@ impl super::Client for Client {
     fn connected(&self) -> bool {
         self.ws.connected()
     }
-
-    fn compile(&mut self, code: Bytes) -> super::CompileReq {
-        //FIXME: accept &[u8]
-        let code = std::str::from_utf8(&code).expect("binary upload not supported for now");
-        Box::new(RequestBuilder::new(&self.http).method(Method::Post).body(code).send())
-    }
-}
-
-impl super::Compiling for Request {
-    fn try_recv(&mut self) -> Option<CompileRes> {
-        match self.try_recv() {
-            Some(Ok(res)) => Some(Ok(serde_json::from_str(&res).unwrap())),
-            Some(Err(err)) => Some(Err(Error::new("Network error", err.to_string()))),
-            None => None,
-        }
-    }
 }

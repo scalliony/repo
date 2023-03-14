@@ -30,5 +30,8 @@ pub struct LinkExport {
 pub enum ExportType {
     UnitFunc,
 }
-pub static MAY_EXPORT_START: LinkExport =
-    LinkExport { name: "_start", required: false, value: ExportType::UnitFunc };
+pub static MAY_EXPORT_START: LinkExport = LinkExport {
+    name: "_start",
+    required: false,
+    value: ExportType::UnitFunc,
+};

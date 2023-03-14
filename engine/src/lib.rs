@@ -49,7 +49,14 @@ impl<S: FnMut(Event)> Game<S> {
 
         for (id, bot) in self.bots.iter_mut() {
             //Process
-            Self::tick_bot(id, bot, &mut self.programs, &self.vm, &self.map, &mut self.events)
+            Self::tick_bot(
+                id,
+                bot,
+                &mut self.programs,
+                &self.vm,
+                &self.map,
+                &mut self.events,
+            )
         }
         self.tick_act();
         self.tick_death();
@@ -85,9 +92,12 @@ impl<S: FnMut(Event)> Game<S> {
                 let tpl = programs[bot.program].compiled(vm);
                 match bot::Cpu::boot(tpl.unwrap(), state, off.fuel) {
                     Ok(cpu) => bot.cpu = Ok(cpu),
-                    Err((log, trap)) => {
+                    Err((log, err)) => {
                         events.log(src, log);
-                        events.send(BotError { src, err: err_trap("Trap during start", trap) });
+                        events.send(BotError {
+                            src,
+                            err: err_wrap("During start", err),
+                        });
                         return;
                     }
                 }
@@ -100,8 +110,11 @@ impl<S: FnMut(Event)> Game<S> {
         tracing::trace!("fuel {}", cpu.process.fuel());
         let res = cpu.tick();
         events.log(src, cpu.store_mut().read_log());
-        if let Err(trap) = res {
-            events.send(BotError { src, err: err_trap("Trap during tick", trap) });
+        if let Err(err) = res {
+            events.send(BotError {
+                src,
+                err: err_wrap("During tick", err),
+            });
         }
     }
     /// Edit bots and maps
@@ -135,14 +148,20 @@ impl<S: FnMut(Event)> Game<S> {
                                 if consume_fuel(cpu, TURN_FUEL, alive) {
                                     let state = cpu.state_mut();
                                     state.facing += Angle::Left;
-                                    self.events.send(BotRotate { src, dir: state.facing });
+                                    self.events.send(BotRotate {
+                                        src,
+                                        dir: state.facing,
+                                    });
                                 }
                             }
                             MotorRight => {
                                 if consume_fuel(cpu, TURN_FUEL, alive) {
                                     let state = cpu.state_mut();
                                     state.facing += Angle::Right;
-                                    self.events.send(BotRotate { src, dir: state.facing });
+                                    self.events.send(BotRotate {
+                                        src,
+                                        dir: state.facing,
+                                    });
                                 }
                             }
                             MotorForward => {
@@ -234,13 +253,21 @@ impl<S: FnMut(Event)> Game<S> {
             };
 
             // Check chain head
-            let mut it = It { to: Some(to), tail, state };
+            let mut it = It {
+                to: Some(to),
+                tail,
+                state,
+            };
             while let TryMoveState::After(_) = it.state {
                 it.next(ms);
             }
             let valid = it.state.is_ok();
             let head = it.to;
-            it = It { to: Some(to), tail, state };
+            it = It {
+                to: Some(to),
+                tail,
+                state,
+            };
 
             if valid && head.map_or(true, |at| self.map.get(at).is_empty()) {
                 // Move chain
@@ -269,7 +296,10 @@ impl<S: FnMut(Event)> Game<S> {
                     *state = TryMoveState::Cancelled;
                     let id = *id;
                     if let Ok(bot) = self.bots.get(id) {
-                        self.events.send(BotCollide { src: bot.src(id), to });
+                        self.events.send(BotCollide {
+                            src: bot.src(id),
+                            to,
+                        });
                     }
                 }
             }
@@ -329,18 +359,26 @@ impl<S: FnMut(Event)> Game<S> {
                 let i: usize = q.pid.into();
                 let at = q.to;
                 if i >= self.programs.len() {
+                    tracing::warn!("bad {:?}", q.pid);
                     return; //FIXME: Bad program
                 }
                 if !self.map.get(at).is_empty() {
+                    tracing::warn!("bad {:?}", at);
                     return; //FIXME: Bad pos
                 }
                 let bid = self.bots.insert(Bot {
                     program: q.pid,
-                    cpu: Err(bot::StateOff { at, facing: bulb::hex::Direction::Up, fuel: 10_000 }),
+                    cpu: Err(bot::StateOff {
+                        at,
+                        facing: bulb::hex::Direction::Up,
+                        fuel: 10_000,
+                    }),
                 });
                 self.map.set(at, Cell::Bot(bid));
                 self.with_tick();
-                self.events.send(Event::BotSpawn { src: BotSrc { bid, at } });
+                self.events.send(Event::BotSpawn {
+                    src: BotSrc { bid, at },
+                });
             }
             Command::ChangeState(_) => unreachable!("Server command"),
         }
@@ -370,7 +408,10 @@ struct GameMap {
 }
 impl GameMap {
     fn new(seed: u32) -> Self {
-        Self { grid: BTreeMap::new(), gen: MapGenerator::new(seed) }
+        Self {
+            grid: BTreeMap::new(),
+            gen: MapGenerator::new(seed),
+        }
     }
     fn set(&mut self, h: Hex, v: Cell) {
         self.grid.insert(h, v);
@@ -414,7 +455,10 @@ struct GameCache {
 }
 impl GameCache {
     fn new() -> Self {
-        Self { moves: HashMap::new(), deaths: Vec::new() }
+        Self {
+            moves: HashMap::new(),
+            deaths: Vec::new(),
+        }
     }
 }
 #[derive(Clone, Copy, PartialEq)]
@@ -439,7 +483,10 @@ impl<S: FnMut(Event)> EventSender<S> {
     #[inline]
     fn log(&mut self, src: BotSrc, log: String) {
         if !log.is_empty() {
-            self.send(BotLog { src, msg: log.into() })
+            self.send(BotLog {
+                src,
+                msg: log.into(),
+            })
         }
     }
 }
@@ -467,7 +514,7 @@ impl Program {
     #[instrument(level = "trace", skip_all)]
     fn compile(&mut self, vm: &VM) -> Result<()> {
         debug_assert!(self.inner.is_none());
-        let tpl = bot::Template::new(vm, &self.code, bot::State::default())?;
+        let tpl = bot::Template::new(vm, &self.code)?;
         self.inner = Some(tpl);
         Ok(())
     }

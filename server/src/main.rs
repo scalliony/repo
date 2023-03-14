@@ -10,8 +10,9 @@ async fn main() {
 
     let interface = game::run();
 
-    let router =
-        http::Router::new().nest("/api", api::router(interface.clone())).fallback(http::assets());
+    let router = http::Router::new()
+        .nest("/api", api::router(interface.clone()))
+        .fallback(http::assets());
     let router = auth::nest(router, "/auth");
 
     http::serve(router, interface).await;

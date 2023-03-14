@@ -34,12 +34,20 @@ impl Client {
             .spawn(move || {
                 while game.update() != State::Stopped {
                     //TODO: time step
-                    thread::sleep(Duration::from_millis(thread_tick_ms.load(Ordering::Relaxed)))
+                    thread::sleep(Duration::from_millis(
+                        thread_tick_ms.load(Ordering::Relaxed),
+                    ))
                 }
             })
             .unwrap();
 
-        Self { commands: commands_tx, events_rx, events_tx, thread: Some(thread), tick_ms }
+        Self {
+            commands: commands_tx,
+            events_rx,
+            events_tx,
+            thread: Some(thread),
+            tick_ms,
+        }
     }
 }
 impl Drop for Client {
@@ -62,27 +70,28 @@ impl super::super::Client for Client {
             Rpc::Spawn(q) => Some(Command::Spawn(q)),
             Rpc::Map(q) => {
                 let evs = self.events_tx.clone();
-                Some(Command::Map(q, Promise::new(move |cr| { _ = evs.send(Event::Cells(cr)); })))
+                Some(Command::Map(
+                    q,
+                    Promise::new(move |cr| {
+                        _ = evs.send(Event::Cells(cr));
+                    }),
+                ))
             }
             Rpc::SetView { .. } => None,
+            Rpc::Compile { cid, code } => {
+                let evs = self.events_tx.clone();
+                Some(Command::Compile(
+                    code,
+                    Promise::new(move |r| {
+                        _ = evs.send(match r {
+                            Ok(pid) => Event::ProgramAdd { cid, pid },
+                            Err(err) => Event::CompileError { cid, err },
+                        })
+                    }),
+                ))
+            }
         } {
             _ = self.commands.send(cmd);
         }
-    }
-
-    fn compile(&mut self, code: Bytes) -> super::super::CompileReq {
-        let rx = CompileSync::default();
-        let tx = rx.clone();
-        _ = self
-            .commands
-            .send(Command::Compile(code, Promise::new(move |res| *tx.lock().unwrap() = Some(res))));
-        Box::new(rx)
-    }
-}
-
-type CompileSync = Arc<Mutex<Option<CompileRes>>>;
-impl super::super::Compiling for CompileSync {
-    fn try_recv(&mut self) -> Option<CompileRes> {
-        self.lock().unwrap().take()
     }
 }

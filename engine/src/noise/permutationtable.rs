@@ -14,7 +14,12 @@ impl XorShiftRng {
         if seed.iter().all(|&x| x == 0) {
             seed = [0xBAD_5EED, 0xBAD_5EED, 0xBAD_5EED, 0xBAD_5EED];
         }
-        XorShiftRng { x: w(seed[0]), y: w(seed[1]), z: w(seed[2]), w: w(seed[3]) }
+        XorShiftRng {
+            x: w(seed[0]),
+            y: w(seed[1]),
+            z: w(seed[2]),
+            w: w(seed[3]),
+        }
     }
 
     #[inline]

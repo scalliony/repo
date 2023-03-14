@@ -14,7 +14,7 @@ impl Id {
     }
     pub fn new(v: I) -> Self {
         let mut id = Self { index: 0, gen: 0 };
-        for i in 0..I::BITS/2 {
+        for i in 0..I::BITS / 2 {
             id.index |= ((v & 1 << (2 * i)) >> i) as usize;
             id.gen |= ((v & 1 << (2 * i + 1)) >> (i + 1)) as usize;
         }
@@ -24,7 +24,7 @@ impl Id {
         let mut v = 0;
         let a = self.index as I;
         let b = self.gen as I;
-        for i in 0..I::BITS/2 {
+        for i in 0..I::BITS / 2 {
             v |= (a & 1 << i) << i;
             v |= (b & 1 << i) << (i + 1);
         }
@@ -74,7 +74,10 @@ impl<K: Into<Id> + From<Id>, V> Array<K, V> {
             }
         };
 
-        K::from(Id { index, gen: self.gens[index] })
+        K::from(Id {
+            index,
+            gen: self.gens[index],
+        })
     }
 
     pub fn remove(&mut self, key: K) -> Result<V, NotFound> {
@@ -109,14 +112,22 @@ impl<K: Into<Id> + From<Id>, V> Array<K, V> {
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (K, &V)> {
-        self.vals.iter().zip(self.gens.iter().enumerate()).filter_map(|(opt, (index, gen))| {
-            opt.as_ref().map(|val| (K::from(Id { index, gen: *gen }), val))
-        })
+        self.vals
+            .iter()
+            .zip(self.gens.iter().enumerate())
+            .filter_map(|(opt, (index, gen))| {
+                opt.as_ref()
+                    .map(|val| (K::from(Id { index, gen: *gen }), val))
+            })
     }
     pub fn iter_mut(&mut self) -> impl Iterator<Item = (K, &mut V)> {
-        self.vals.iter_mut().zip(self.gens.iter().enumerate()).filter_map(|(opt, (index, gen))| {
-            opt.as_mut().map(|val| (K::from(Id { index, gen: *gen }), val))
-        })
+        self.vals
+            .iter_mut()
+            .zip(self.gens.iter().enumerate())
+            .filter_map(|(opt, (index, gen))| {
+                opt.as_mut()
+                    .map(|val| (K::from(Id { index, gen: *gen }), val))
+            })
     }
     /// To use with split_at_mut
     pub fn iter_index(&self) -> std::ops::Range<usize> {
@@ -128,9 +139,17 @@ impl<K: Into<Id> + From<Id>, V> Array<K, V> {
         let (opt, right) = v_right.split_at_mut(1);
         opt[0].as_mut().map(|val| {
             (
-                K::from(Id { index, gen: self.gens[index] }),
+                K::from(Id {
+                    index,
+                    gen: self.gens[index],
+                }),
                 val,
-                MutSplit { gens: &self.gens[..], left, right, _marker: PhantomData },
+                MutSplit {
+                    gens: &self.gens[..],
+                    left,
+                    right,
+                    _marker: PhantomData,
+                },
             )
         })
     }

@@ -1,18 +1,21 @@
 mod client;
 mod game;
-mod gui;
 mod logger;
 mod opts;
 mod util;
 mod view;
 use chrono::{TimeZone, Utc};
+use egui_macroquad::egui;
 use macroquad::prelude::*;
 use util::*;
 
 #[macroquad::main(window)]
 async fn main() {
-    gui::cfg(|ctx| {
-        ctx.set_visuals(egui::Visuals { window_rounding: 0.0.into(), ..Default::default() })
+    egui_macroquad::cfg(|ctx| {
+        ctx.set_visuals(egui::Visuals {
+            window_rounding: 0.0.into(),
+            ..Default::default()
+        })
     });
 
     let mut client = game::Client::new(if game::Client::HAS_ONLINE {
@@ -30,7 +33,6 @@ async fn main() {
     let mut view_tracker = game::ViewTracker::new();
 
     let mut code = Code::default();
-    let mut programs = game::Programs::new();
     let mut program: usize = 0;
     let mut spawn: Hex = Hex::default();
 
@@ -42,7 +44,6 @@ async fn main() {
     loop {
         view_tracker.track(&mut client, view.update());
         client.update();
-        programs.update();
 
         if state.apply(&mut client) {
             tick_lerp = 0.;
@@ -50,7 +51,7 @@ async fn main() {
             tick_lerp = (tick_lerp + get_frame_time() / tick_duration).min(1.);
         }
 
-        gui::ui(|ctx| {
+        egui_macroquad::ui(|ctx| {
             use egui::*;
             Window::new("Program Editor").show(ctx, |ui| {
                 if let Some(drop) = dropped_bytes() {
@@ -58,31 +59,36 @@ async fn main() {
                         .map_or_else(|err| Code::Binary(err.into_bytes()), Code::Text)
                 }
                 ui.code_editor(&mut code);
-                if ui.add_enabled(!code.as_bytes().is_empty(), Button::new("Compile")).clicked() {
-                    programs.compile(&mut client, std::mem::take(&mut code).into_bytes().into())
+                if ui
+                    .add_enabled(!code.as_bytes().is_empty(), Button::new("Compile"))
+                    .clicked()
+                {
+                    game::compile(&mut client, std::mem::take(&mut code).into_bytes().into())
                 }
             });
 
-            if !programs.as_ref().is_empty() {
+            if !state.programs().is_empty() {
                 Window::new("Spawn").show(ctx, |ui| {
                     ui.separator();
                     ui.horizontal(|ui| {
                         ui.label("At:");
                         let mut q = spawn.q();
                         let mut r = spawn.r();
-                        ui.add(egui::DragValue::new(&mut q));
-                        ui.add(egui::DragValue::new(&mut r));
+                        ui.add(DragValue::new(&mut q));
+                        ui.add(DragValue::new(&mut r));
                         spawn = Hex::new(q, r);
                     });
                     ComboBox::from_label("Program").show_index(
                         ui,
                         &mut program,
-                        programs.as_ref().len(),
-                        |i| usize::from(programs.as_ref()[i]).to_string(),
+                        state.programs().len(),
+                        |i| usize::from(state.programs()[i]).to_string(),
                     );
-                    if ui.add_enabled(!programs.as_ref().is_empty(), Button::new("Spawn")).clicked()
+                    if ui
+                        .add_enabled(!state.programs().is_empty(), Button::new("Spawn"))
+                        .clicked()
                     {
-                        game::spawn(&mut client, programs.as_ref()[program], spawn)
+                        game::spawn(&mut client, state.programs()[program], spawn)
                     }
                 });
             }
@@ -92,7 +98,11 @@ async fn main() {
                 .anchor(Align2::RIGHT_TOP, (-5., 5.))
                 .auto_sized()
                 .show(ctx, |ui| {
-                    ui.small(format!("FPS: {} - {:.3}ms", get_fps(), get_frame_time() * 1000.));
+                    ui.small(format!(
+                        "FPS: {} - {:.3}ms",
+                        get_fps(),
+                        get_frame_time() * 1000.
+                    ));
                     if let Some((id, ts)) = state.tick() {
                         let ts = Utc.timestamp_millis(ts.into());
                         ui.small(format!("{}\n{}\n{}", id, ts.date(), ts.time()));
@@ -112,7 +122,12 @@ fn window() -> Conf {
         };
     }
     info!(title!());
-    Conf { window_title: title!().to_string(), sample_count: 4, icon: None, ..Conf::default() }
+    Conf {
+        window_title: title!().to_string(),
+        sample_count: 4,
+        icon: None,
+        ..Conf::default()
+    }
 }
 
 #[inline]
@@ -173,7 +188,7 @@ fn draw(view: &view::View, state: &game::AnimatedState, lerp: F) {
         }
     }
 
-    gui::draw();
+    egui_macroquad::draw();
 }
 
 enum Code {

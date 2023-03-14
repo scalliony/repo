@@ -6,13 +6,12 @@ use axum::{
         ws::{Message, WebSocket},
         Query, WebSocketUpgrade,
     },
-    http::StatusCode,
     middleware::from_extractor,
     response::{
         sse::{self, Sse},
-        IntoResponse, Json,
+        IntoResponse,
     },
-    routing::{get, post},
+    routing::get,
     Extension, Router,
 };
 use futures::{stream::Stream, SinkExt};
@@ -22,33 +21,20 @@ use tokio_stream::{wrappers::BroadcastStream, StreamExt as _};
 use tracing::Instrument;
 
 lazy_static! {
-    static ref ADMIN: HashSet<String> =
-        std::env::var("API_ADMIN").unwrap_or_default().split(',').map(|s| s.to_owned()).collect();
+    static ref ADMIN: HashSet<String> = std::env::var("API_ADMIN")
+        .unwrap_or_default()
+        .split(',')
+        .map(|s| s.to_owned())
+        .collect();
 }
 
 pub fn router(interface: InterfaceRef) -> Router {
     tracing::info!("found {} admins", ADMIN.len());
     Router::new()
-        .route("/compile", post(compile))
-        .route("/spawn", post(spawn))
         .route("/sse", get(sse))
         .route("/ws", get(ws_upgrade))
         .route_layer(from_extractor::<auth::User>())
         .layer(Extension(interface))
-}
-
-async fn compile(bytes: Bytes, Extension(interface): Extension<InterfaceRef>) -> impl IntoResponse {
-    let (cmd, rx) = compile_command(bytes);
-    interface.commands.send(cmd).unwrap();
-    rx.await.unwrap().map(Json).map_err(|err| (StatusCode::BAD_REQUEST, Json(err)))
-}
-
-async fn spawn(
-    Json(query): Json<SpawnBody>,
-    Extension(interface): Extension<InterfaceRef>,
-) -> impl IntoResponse {
-    _ = interface.commands.send(Command::Spawn(query));
-    StatusCode::ACCEPTED
 }
 
 async fn ws_upgrade(
@@ -72,7 +58,10 @@ async fn ws(socket: WebSocket, interface: InterfaceRef, user: auth::Claims) {
     let read_view = view.clone();
     let mut send_task = tokio::spawn(async move {
         while let Ok(event) = rx.recv().await {
-            if event.src().map_or(true, |src| read_view.lock().unwrap().contains(src.at)) {
+            if event
+                .src()
+                .map_or(true, |src| read_view.lock().unwrap().contains(src.at))
+            {
                 let json = serde_json::to_string(&event).unwrap();
                 if sender.feed(Message::Text(json)).await.is_err() {
                     return;
@@ -118,6 +107,18 @@ async fn ws(socket: WebSocket, interface: InterfaceRef, user: auth::Claims) {
                         Rpc::Spawn(q) => _ = tx.send(Command::Spawn(q)),
                         Rpc::ChangeState(v) if is_admin => _ = tx.send(Command::ChangeState(v)),
                         Rpc::ChangeState { .. } => return tracing::trace!("not admin"),
+                        Rpc::Compile { cid, code } => {
+                            let tx_self = tx_self.clone();
+                            _ = tx.send(Command::Compile(
+                                code,
+                                Promise::new(move |r| {
+                                    _ = tx_self.send(match r {
+                                        Ok(pid) => Event::ProgramAdd { cid, pid },
+                                        Err(err) => Event::CompileError { cid, err },
+                                    })
+                                }),
+                            ));
+                        }
                     },
                     Err(err) => return tracing::trace!("serde: {}", err),
                 }

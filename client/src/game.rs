@@ -1,5 +1,4 @@
 pub use super::client::Any as Client;
-use super::client::CompileReq;
 use super::util::*;
 use bulb::dto::*;
 use std::collections::{BTreeMap, HashMap};
@@ -12,7 +11,13 @@ impl ViewTracker {
     const THROTTLE: usize = 100;
 
     pub fn new() -> Self {
-        Self { at: HexRange { center: Hex::default(), rad: 0 }, throttle: 0 }
+        Self {
+            at: HexRange {
+                center: Hex::default(),
+                rad: 0,
+            },
+            throttle: 0,
+        }
     }
     pub fn track(&mut self, client: &mut Client, view: HexRange) {
         if self.at != view {
@@ -46,18 +51,26 @@ impl BotState {
 struct State {
     map: BTreeMap<Hex, Cell>,
     bots: HashMap<BotId, BotState>,
+    programs: Vec<ProgramId>,
 }
 impl State {
     fn merge(&mut self, other: State) {
         self.bots.extend(other.bots.into_iter());
         self.map.extend(other.map.into_iter());
+        if self.programs.len() < other.programs.len() {
+            self.programs
+                .extend_from_slice(&other.programs[self.programs.len()..])
+        }
     }
     fn bot_mut(&mut self, src: &BotSrc) -> &mut BotState {
         self.map.insert(src.at, Cell::Bot(src.bid));
         self.bots
             .entry(src.bid)
             .and_modify(|bot| bot.at = src.at)
-            .or_insert(BotState { at: src.at, ..Default::default() })
+            .or_insert(BotState {
+                at: src.at,
+                ..Default::default()
+            })
     }
 
     #[inline]
@@ -67,6 +80,10 @@ impl State {
     #[inline]
     fn bot(&self, id: BotId) -> Option<&BotState> {
         self.bots.get(&id)
+    }
+    #[inline]
+    fn programs(&self) -> &[ProgramId] {
+        &self.programs
     }
 }
 
@@ -122,6 +139,11 @@ impl AnimatedState {
             }
             BotLog { src, msg } => info!("{:?} log {}", src, msg),
             BotError { src, err } => warn!("{:?} err {:?}", src, err),
+            ProgramAdd { cid, pid } => {
+                self.next.programs.push(pid);
+                info!("CompileId({}) ok {:?}", cid, pid)
+            }
+            CompileError { cid, err } => error!("CompileId({}) err {:?}", cid, err),
         }
     }
     pub fn apply(&mut self, it: impl Iterator<Item = Event>) -> bool {
@@ -143,34 +165,14 @@ impl AnimatedState {
     pub fn bot(&self, id: BotId) -> (Option<&BotState>, Option<&BotState>) {
         (self.prev.bot(id), self.cur.bot(id))
     }
+    #[inline]
+    pub fn programs(&self) -> &[ProgramId] {
+        self.cur.programs()
+    }
 }
 
-pub struct Programs {
-    actual: Vec<ProgramId>,
-    pending: Vec<CompileReq>,
-}
-impl Programs {
-    pub fn new() -> Self {
-        Self { actual: Vec::default(), pending: Vec::default() }
-    }
-    pub fn compile(&mut self, client: &mut Client, code: Bytes) {
-        self.pending.push(client.compile(code));
-    }
-    pub fn update(&mut self) {
-        self.pending.retain_mut(|c| {
-            match c.try_recv() {
-                None => return true,
-                Some(Ok(id)) => self.actual.push(id),
-                Some(Err(err)) => error!("Compile Error: {:?}", err),
-            }
-            false
-        });
-    }
-}
-impl AsRef<[ProgramId]> for Programs {
-    fn as_ref(&self) -> &[ProgramId] {
-        &self.actual
-    }
+pub fn compile(client: &mut Client, code: Bytes) {
+    client.send(Rpc::Compile { cid: 0, code });
 }
 pub fn spawn(client: &mut Client, pid: ProgramId, to: Hex) {
     client.send(Rpc::Spawn(SpawnBody { pid, to }))

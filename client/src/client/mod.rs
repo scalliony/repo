@@ -14,12 +14,6 @@ trait Client {
     fn connected(&self) -> bool {
         true
     }
-
-    fn compile(&mut self, code: Bytes) -> CompileReq;
-}
-pub type CompileReq = Box<dyn Compiling>;
-pub trait Compiling {
-    fn try_recv(&mut self) -> Option<CompileRes>;
 }
 
 pub enum Any {
@@ -76,14 +70,6 @@ impl Any {
             Self::Off(c) => c.connected(),
             #[cfg(feature = "online")]
             Self::On(c) => c.connected(),
-        }
-    }
-    pub fn compile(&mut self, code: Bytes) -> CompileReq {
-        match self {
-            #[cfg(feature = "offline")]
-            Self::Off(c) => c.compile(code),
-            #[cfg(feature = "online")]
-            Self::On(c) => c.compile(code),
         }
     }
 }

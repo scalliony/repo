@@ -112,11 +112,11 @@ impl<S> Linker<S> {
     }
 
     #[inline]
-    pub fn link(&mut self, bytes: impl AsRef<[u8]>, data: S::T) -> Result<Template<S>>
+    pub fn link(&mut self, bytes: impl AsRef<[u8]>) -> Result<Template<S>>
     where
         S: spec::Store,
     {
-        Template::new(self, bytes, data)
+        Template::new(self, bytes)
     }
 }
 impl<T: 'static> Linker<WasiStore<T>> {
@@ -130,11 +130,9 @@ impl<T: 'static> Linker<WasiStore<T>> {
 #[repr(transparent)]
 pub struct Template<S>(wasmtime::InstancePre<S>);
 impl<S: spec::Store> Template<S> {
-    pub fn new(linker: &Linker<S>, bytes: impl AsRef<[u8]>, data: S::T) -> Result<Self> {
+    pub fn new(linker: &Linker<S>, bytes: impl AsRef<[u8]>) -> Result<Self> {
         let module = wasmtime::Module::new(linker.0.engine(), bytes)?;
-        let inner = linker
-            .0
-            .instantiate_pre(&mut wasmtime::Store::new(linker.0.engine(), S::new(data)), &module)?;
+        let inner = linker.0.instantiate_pre(&module)?;
         for export in linker.1.iter() {
             _ = Self::has_export(inner.module(), export)?;
         }
@@ -174,7 +172,7 @@ impl<S: spec::Store> Instance<S> {
         let i = tpl.0.instantiate(&mut store).unwrap();
         Self(i, store)
     }
-    pub fn started(tpl: &Template<S>, data: S::T, fuel: u64) -> (Self, Result<(), Trap>) {
+    pub fn started(tpl: &Template<S>, data: S::T, fuel: u64) -> (Self, Result<()>) {
         let mut i = Self::new(tpl, data, fuel);
         let res = if let Ok(start) = i.get_func(spec::MAY_EXPORT_START.name) {
             i.call(&start, ())
@@ -220,10 +218,11 @@ where
     }
 }
 
-pub use wasmtime::{Caller, Trap, TypedFunc as Func};
+pub use anyhow::Error;
+pub use wasmtime::{Caller, Trap::MemoryOutOfBounds as MemoryOutOfBoundsError, TypedFunc as Func};
 impl<S> Instance<S> {
     #[inline]
-    pub fn call<P, R>(&mut self, f: &Func<P, R>, p: P) -> Result<R, Trap>
+    pub fn call<P, R>(&mut self, f: &Func<P, R>, p: P) -> Result<R>
     where
         P: wasmtime::WasmParams,
         R: wasmtime::WasmResults,
@@ -246,13 +245,13 @@ where
     }
 }
 pub trait CallerMemoryExt {
-    fn memory(&mut self) -> Result<wasmtime::Memory, Trap>;
+    fn memory(&mut self) -> Result<wasmtime::Memory>;
 }
 impl<S> CallerMemoryExt for Caller<'_, S> {
-    fn memory(&mut self) -> Result<wasmtime::Memory, Trap> {
+    fn memory(&mut self) -> Result<wasmtime::Memory> {
         match self.get_export("memory") {
             Some(wasmtime::Extern::Memory(m)) => Ok(m),
-            _ => Err(Trap::new("missing required memory export")),
+            _ => Err(MemoryOutOfBoundsError.into()),
         }
     }
 }

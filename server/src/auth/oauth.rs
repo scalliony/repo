@@ -79,8 +79,10 @@ impl Introspector {
     ) -> Result<UserData, Error> {
         match self {
             Introspector::Github => {
-                let client =
-                    reqwest::Client::builder().user_agent(env!("CARGO_PKG_NAME")).build().unwrap();
+                let client = reqwest::Client::builder()
+                    .user_agent(env!("CARGO_PKG_NAME"))
+                    .build()
+                    .unwrap();
                 let user_request = client
                     .get("https://api.github.com/user")
                     .bearer_auth(token.access_token().secret())

@@ -29,7 +29,10 @@ pub struct OpenSimplex {
 
 impl Seedable for OpenSimplex {
     fn new_seed(seed: u32) -> Self {
-        Self { seed, perm_table: PermutationTable::new(seed) }
+        Self {
+            seed,
+            perm_table: PermutationTable::new(seed),
+        }
     }
     fn seed(&self) -> u32 {
         self.seed
