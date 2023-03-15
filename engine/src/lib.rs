@@ -3,6 +3,8 @@ mod bot;
 mod gen;
 mod helper;
 mod noise;
+mod user;
+mod grid;
 use api::*;
 use bot::Bot;
 pub use bulb::dto::{Event::*, *};
@@ -10,9 +12,9 @@ use bulb::hex::{Angle, Hex};
 use chrono::Utc;
 pub use helper::*;
 use std::collections::{BTreeMap, HashMap};
-use sys::Result;
 use tracing::instrument;
-use typed_index_collections::TiVec;
+use user::Users;
+use grid::Grid;
 
 pub const DEFAULT_TICK_DURATION_MS: u64 = 1000;
 
@@ -23,11 +25,10 @@ pub struct Game<S> {
     in_tick: bool,
 
     vm: VM,
-    programs: Programs,
-    bots: Bots,
-
-    map: GameMap,
-    cache: GameCache,
+    users: Users,
+    objects: Objects,
+    grid: Grid,
+    cache: Cache,
 }
 impl<S: FnMut(Event)> Game<S> {
     pub fn new(events: S) -> Self {
@@ -36,12 +37,13 @@ impl<S: FnMut(Event)> Game<S> {
             counter: 0,
             in_tick: false,
             vm: new_vm().unwrap(),
-            programs: TiVec::new(),
-            bots: gen::Array::new(),
-            map: GameMap::new(42),
-            cache: GameCache::new(),
+            users: Users::new(),
+            objects: Objects::new(),
+            grid: Grid::new(42),
+            cache: Cache::new(),
         }
     }
+    //TODO: serialize, deserialize
 
     #[instrument(skip_all, fields(id = self.counter))]
     pub fn tick(&mut self) {
@@ -118,7 +120,7 @@ impl<S: FnMut(Event)> Game<S> {
         }
     }
     /// Edit bots and maps
-    /// Fill self.cache.moves && deths
+    /// Fill self.cache.moves
     #[instrument(level = "trace", skip_all)]
     fn tick_act(&mut self) {
         self.cache.moves.clear();
@@ -230,6 +232,7 @@ impl<S: FnMut(Event)> Game<S> {
     /// Consume self.cache.deaths
     #[instrument(level = "trace", skip_all)]
     fn tick_death(&mut self) {
+        //FIXME: remove deaths
         for id in self.cache.deaths.iter() {
             if let Ok(bot) = self.bots.remove(*id) {
                 let src = bot.src(*id);
@@ -355,14 +358,23 @@ impl<S: FnMut(Event)> Game<S> {
                 let range = r.center.range(r.rad as bulb::hex::I);
                 cb.resolve(CellRange::new(r, &self.map));
             }
-            Command::Spawn(q) => {
-                let i: usize = q.pid.into();
-                let at = q.to;
-                if i >= self.programs.len() {
-                    tracing::warn!("bad {:?}", q.pid);
-                    return; //FIXME: Bad program
-                }
-                if !self.map.get(at).is_empty() {
+            Command::BotSpawn(q) => {
+                let user = match self.users.get_mut(q.uid) {
+                    Some(v) => v,
+                    None => {
+                        tracing::warn!("bad {:?}", q.uid);
+                        return; //FIXME: Bad user
+                    }
+                };
+                let prg = match user.get_program(q.pid) {
+                    Some(v) => v,
+                    None => {
+                        tracing::warn!("bad {:?}", q.pid);
+                        return; //FIXME: Bad program
+                    }
+                };
+
+                if !self.grid.get(q.to).is_empty() {
                     tracing::warn!("bad {:?}", at);
                     return; //FIXME: Bad pos
                 }

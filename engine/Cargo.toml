@@ -12,7 +12,6 @@ repository = "https://github.com/scalliony/repo"
 sys = { path = "../sys", package = "scalliony-sys", version = "0.1.0" }
 bulb = { path = "../bulb", package = "scalliony-bulb", version = "0.1.0" }
 tracing = "0.1"
-typed-index-collections = "3"
 chrono = "0.4"
 
 [features]

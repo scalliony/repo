@@ -91,6 +91,17 @@ impl Hex {
     pub fn range(self, rad: I) -> HexRangeIter {
         HexRangeIter::new(self, rad)
     }
+    pub fn ring(self, rad: I) -> impl Iterator<Item = Hex> {
+        assert!(rad > 0);
+        let mut cur = self + Hex::from(Direction::DownLeft) * rad;
+        (0..6).flat_map(move |dir| {
+            (0..rad).map(move |_| {
+                let prev = cur;
+                cur = cur.neighbor(Direction::new(dir));
+                prev
+            })
+        })
+    }
 }
 pub struct HexRangeIter {
     center: Hex,
