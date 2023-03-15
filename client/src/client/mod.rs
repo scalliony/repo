@@ -14,6 +14,7 @@ trait Client {
     fn connected(&self) -> bool {
         true
     }
+    fn state(&self) -> Option<State>;
 }
 
 pub enum Any {
@@ -64,12 +65,12 @@ impl Any {
             Self::On(c) => c.send(v),
         }
     }
-    pub fn connected(&self) -> bool {
+    pub fn state(&self) -> Option<State> {
         match self {
             #[cfg(feature = "offline")]
-            Self::Off(c) => c.connected(),
+            Self::Off(c) => c.state(),
             #[cfg(feature = "online")]
-            Self::On(c) => c.connected(),
+            Self::On(c) => c.state(),
         }
     }
 }

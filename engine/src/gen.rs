@@ -61,23 +61,20 @@ impl<K: Into<Id> + From<Id>, V> Array<K, V> {
     }
 
     pub fn insert(&mut self, value: V) -> K {
-        let index = match self.free.pop_front() {
-            Some(index) => {
-                self.vals[index] = Some(value);
-                index
-            }
-            None => {
-                let index = self.vals.len();
-                self.vals.push(Some(value));
-                self.gens.push(0);
-                index
-            }
-        };
-
-        K::from(Id {
-            index,
-            gen: self.gens[index],
-        })
+        let index = self.free.pop_front().unwrap_or_else(|| {
+            let index = self.vals.len();
+            self.vals.push(None);
+            self.gens.push(0);
+            index
+        });
+        self.vals[index] = Some(value);
+        K::from(Id { index, gen: self.gens[index] })
+    }
+    pub fn next_id(&mut self) -> Id {
+        match self.free.front() {
+            Some(index) => Id { index, gen: self.gens[index] },
+            None => Id { index: self.vals.len(), gen: 0 }
+        }
     }
 
     pub fn remove(&mut self, key: K) -> Result<V, NotFound> {
@@ -86,6 +83,19 @@ impl<K: Into<Id> + From<Id>, V> Array<K, V> {
         self.gens[id.index] += 1;
         self.free.push_back(id.index);
         Ok(v)
+    }
+
+    pub fn retain_mut(&mut self, f: impl FnMut(K, &mut V) -> bool) {
+        for (index, val) in self.vals.iter_mut().enumerate() {
+            if !val.as_mut().map_or(true, |v| f(K::from(Id { index, gen: self.gens[index] }), v)) {
+                *val = None;
+                self.gens[index] += 1;
+                self.free.push_back(index);
+            }
+        }
+    }
+    pub fn retain(&mut self, f: impl FnMut(K, &V) -> bool) {
+        self.retain_mut(|k, v| f(k, v))
     }
 
     pub fn get(&self, key: K) -> Result<&V, NotFound> {

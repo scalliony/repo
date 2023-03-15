@@ -1,15 +1,15 @@
 use super::bot::{self, Action};
+pub use super::bot::VM;
 use super::Error;
 use sys::wasm::{self, spec::StoreRef, CallerMemoryExt};
 use sys::Result;
 
-pub const MIN_BOOT_FUEL: u64 = 64;
+pub const MIN_FUEL: u64 = 64;
 const LOG_FUEL_BASE: u64 = 16;
 const LOG_FUEL_RATIO: u64 = 2;
 pub const TURN_FUEL: u64 = 32;
 pub const MOVE_FUEL: u64 = 256;
 
-pub type VM = wasm::Linker<bot::Store>;
 #[inline]
 pub fn new_vm() -> Result<VM> {
     let mut vm = VM::new(&wasm::Engine::new());

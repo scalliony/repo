@@ -47,23 +47,23 @@ impl BotState {
     }
 }
 
+#[derive(Clone)]
+pub enum ObjState {
+    PackedBot {
+
+    }
+}
+
 #[derive(Default, Clone)]
 struct State {
-    map: BTreeMap<Hex, Cell>,
+    grid: BTreeMap<Hex, Cell>,
     bots: HashMap<BotId, BotState>,
     programs: Vec<ProgramId>,
+    objs: HashMap<ObjId, ObjState>,
 }
 impl State {
-    fn merge(&mut self, other: State) {
-        self.bots.extend(other.bots.into_iter());
-        self.map.extend(other.map.into_iter());
-        if self.programs.len() < other.programs.len() {
-            self.programs
-                .extend_from_slice(&other.programs[self.programs.len()..])
-        }
-    }
     fn bot_mut(&mut self, src: &BotSrc) -> &mut BotState {
-        self.map.insert(src.at, Cell::Bot(src.bid));
+        self.grid.insert(src.at, Cell::Bot(src.bid));
         self.bots
             .entry(src.bid)
             .and_modify(|bot| bot.at = src.at)
@@ -75,7 +75,7 @@ impl State {
 
     #[inline]
     fn at(&self, at: Hex) -> Option<&Cell> {
-        self.map.get(&at)
+        self.grid.get(&at)
     }
     #[inline]
     fn bot(&self, id: BotId) -> Option<&BotState> {
@@ -85,38 +85,42 @@ impl State {
     fn programs(&self) -> &[ProgramId] {
         &self.programs
     }
+    #[inline]
+    fn obj(&self, id: ObjId) -> Option<&ObjState> {
+        self.objs.get(&id)
+    }
 }
 
-/// Allow transitions between previous and current state while building next one
+/// Allow transitions between previous and current state
 /// Does not handle temporality
 #[derive(Default)]
 pub struct AnimatedState {
     prev: State,
     cur: State,
-    next: State,
-    next_deaths: Vec<BotId>,
     tick: Option<(TickId, Timestamp)>,
-    next_tick: Option<(TickId, Timestamp)>,
-    state: Option<bulb::dto::State>,
 }
 impl AnimatedState {
+    pub fn apply(&mut self, tick: &[Event]) {
+        debug_assert!(matches!(tick.last(), Some(Event::TickEnd)) && tick.len() > 1);
+        // MAYBE: filter cur view
+        self.prev.clone_from(&self.cur);
+        for (_, bot) in self.cur.bots.iter_mut() {
+            bot.fix();
+        }
+        for e in tick.split_last().unwrap().1 {
+            trace!("{:?}", e);
+            use Event::*;
+            match e {
+                TickStart { tid, ts } => self.tick = Some((*tid, *ts)),
+                TickEnd => unreachable!("Double end"),
+            }
+        }
+    }
+
     pub fn apply_one(&mut self, e: Event) {
         trace!("{:?}", e);
         use Event::*;
         match e {
-            TickEnd => {
-                // MAYBE: filter cur view
-                self.prev.clone_from(&self.cur);
-                for (_, bot) in self.cur.bots.iter_mut() {
-                    bot.fix();
-                }
-                self.cur.merge(std::mem::take(&mut self.next));
-                for id in self.next_deaths.iter() {
-                    self.cur.bots.remove(id);
-                }
-                self.next_deaths.clear();
-                self.tick = std::mem::take(&mut self.next_tick);
-            }
             TickStart { tid, ts } => {
                 self.next_tick = Some((tid, ts));
             }
@@ -127,12 +131,12 @@ impl AnimatedState {
             BotMove { src, to } => {
                 let from = std::mem::replace(&mut self.next.bot_mut(&src).at, to);
                 let _prev = self.next.map.insert(from, Cell::Ground);
-                debug_assert_eq!(_prev, Some(Cell::Bot(src.bid)));
-                self.next.map.insert(to, Cell::Bot(src.bid));
+                debug_assert_eq!(_prev, Some(Cell::Obj(src.bid)));
+                self.next.map.insert(to, Cell::Obj(src.bid));
             }
             BotCollide { src, to } => self.next.bot_mut(&src).collide = Some(to),
             BotDie { src } => {
-                self.next_deaths.push(src.bid);
+                self.next_tombs.push(src.bid);
                 if let Some(bot) = self.next.bots.remove(&src.bid) {
                     self.next.map.insert(bot.at, Cell::Ground);
                 }
@@ -145,14 +149,6 @@ impl AnimatedState {
             }
             CompileError { cid, err } => error!("CompileId({}) err {:?}", cid, err),
         }
-    }
-    pub fn apply(&mut self, it: impl Iterator<Item = Event>) -> bool {
-        let mut ticked = false;
-        for e in it {
-            ticked |= matches!(e, Event::TickEnd);
-            self.apply_one(e);
-        }
-        ticked
     }
 
     #[inline]

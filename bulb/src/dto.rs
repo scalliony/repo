@@ -47,6 +47,14 @@ pub enum Event {
         src: BotSrc,
         to: Hex,
     },
+    ObjAdd {
+        oid: ObjId,
+        at: Hex,
+    },
+    ObjRm {
+        oid: ObjId,
+        at: Hex,
+    },
     Cells(CellRange),
     ProgramAdd {
         pid: ProgramId,
@@ -68,12 +76,7 @@ impl Event {
             BotRotate { src, .. } => Some(src),
             BotMove { src, .. } => Some(src),
             BotCollide { src, .. } => Some(src),
-            StateChange { .. }
-            | TickStart { .. }
-            | TickEnd
-            | Cells { .. }
-            | ProgramAdd { .. }
-            | CompileError { .. } => None,
+            _ => None,
         }
     }
 }
@@ -83,8 +86,14 @@ impl Event {
 pub enum Command {
     ChangeState(State),
     Compile(Bytes, Promise<CompileRes>),
-    Spawn(SpawnBody),
+    BotSpawn(SpawnBody),
     Map(HexRange, Promise<CellRange>),
+    UserByLogin(Str, Promise<Option<UserInfo>>),
+    UserSpawn {
+        login: Str,
+        name: Str,
+        cb: Promise<(UserId, Hex)>,
+    },
 }
 
 /// Over the network [`Command`]
@@ -162,26 +171,7 @@ impl<V> fmt::Debug for Promise<V> {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-#[repr(transparent)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "serde", serde(transparent))]
-pub struct TickId(u32);
-impl From<u32> for TickId {
-    fn from(v: u32) -> Self {
-        Self(v)
-    }
-}
-impl From<TickId> for u32 {
-    fn from(t: TickId) -> Self {
-        t.0
-    }
-}
-impl fmt::Display for TickId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Tick{}", self.0)
-    }
-}
+pub type TickId = u32;
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy, Hash, PartialOrd, Ord)]
 #[repr(transparent)]
@@ -204,28 +194,49 @@ impl fmt::Display for BotId {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(PartialEq, Eq, Debug, Clone, Copy, Hash, PartialOrd, Ord)]
 #[repr(transparent)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(transparent))]
-pub struct ProgramId(u32);
-impl From<u32> for ProgramId {
+pub struct ObjId(u64);
+impl From<u64> for ObjId {
+    fn from(v: u64) -> Self {
+        Self(v)
+    }
+}
+impl From<ObjId> for u64 {
+    fn from(b: ObjId) -> Self {
+        b.0
+    }
+}
+impl fmt::Display for ObjId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Obj{}", self.0)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(transparent)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(transparent))]
+pub struct UserId(u32);
+impl From<u32> for UserId {
     fn from(v: u32) -> Self {
         Self(v)
     }
 }
-impl From<usize> for ProgramId {
+impl From<usize> for UserId {
     fn from(v: usize) -> Self {
         Self(v.try_into().unwrap_or_default())
     }
 }
-impl From<ProgramId> for u32 {
-    fn from(p: ProgramId) -> u32 {
+impl From<UserId> for u32 {
+    fn from(p: UserId) -> u32 {
         p.0
     }
 }
-impl From<ProgramId> for usize {
-    fn from(p: ProgramId) -> Self {
+impl From<UserId> for usize {
+    fn from(p: UserId) -> Self {
         usize::try_from(p.0).unwrap_or_default()
     }
 }
@@ -233,11 +244,14 @@ impl From<ProgramId> for usize {
 /// Compilation request identifier
 pub type CompileId = u32;
 
+pub type ProgramId = u32;
+
 #[derive(PartialEq, Debug, Clone, Copy)]
 pub enum Cell {
     Ground,
     Wall,
     Bot(BotId),
+    Obj(ObjId),
 }
 impl Cell {
     #[inline]
@@ -266,7 +280,7 @@ impl Error {
 pub struct BotSrc {
     pub bid: BotId,
     pub at: Hex,
-    /*owner*/
+    pub uid: UserId,
 }
 
 #[derive(PartialEq, Debug, Clone, Copy)]
@@ -278,6 +292,13 @@ pub enum State {
 }
 
 pub type CompileRes = Result<ProgramId, Error>;
+
+#[derive(Debug, Clone)]
+pub struct UserInfo {
+    pub id: UserId,
+    pub name: Str,
+    pub spawn: Hex,
+}
 
 /// Number of non-leap-milliseconds since January 1, 1970 UTC
 #[derive(Clone, Copy)]
@@ -321,22 +342,15 @@ pub struct CellRange {
     pub cells: Str,
 }
 impl CellRange {
-    pub fn new(range: HexRange, cmap: &impl CellMap) -> Self {
+    pub fn new(range: HexRange, grid: &impl CellGrid) -> Self {
         let mut s = String::with_capacity(range.iter().len());
-        for c in range.iter().map(move |h| cmap.get(h)) {
+        for c in range.iter().map(move |h| grid.get(h)) {
             use Cell::*;
             match c {
                 Ground => s.push(' '),
                 Wall => s.push('x'),
-                Bot(BotId(v)) => {
-                    s.push('b');
-                    for i in (0..4).rev() {
-                        let p = ((v & ((u16::MAX as u64) << (i * u16::BITS))) >> i * u16::BITS)
-                            as u32
-                            + 0xE000;
-                        s.push(unsafe { char::from_u32_unchecked(p) });
-                    }
-                }
+                Bot(BotId(v)) => Self::push_id(&mut s, 'b', v),
+                Obj(ObjId(v)) => Self::push_id(&mut s, 'o', v),
             }
         }
         Self {
@@ -348,23 +362,30 @@ impl CellRange {
         let mut chars = self.cells.as_ref().chars();
         self.range.iter().map(move |h| {
             use Cell::*;
-            (
-                h,
-                match chars.next().expect("End of cells") {
-                    ' ' => Ground,
-                    'x' => Wall,
-                    'b' => {
-                        let mut v = 0u64;
-                        for _ in 0..4 {
-                            v += chars.next().expect("End of cells") as u64 - 0xE000;
-                            v <<= u16::BITS;
-                        }
-                        Bot(BotId(v))
-                    }
-                    _ => panic!("Invalid cells"),
-                },
-            )
+            (h, match chars.next().expect("End of cells") {
+                ' ' => Ground,
+                'x' => Wall,
+                'b' => Bot(BotId(Self::read_id(&mut chars))),
+                'o' => Obj(ObjId(Self::read_id(&mut chars))),
+                _ => panic!("Invalid cells")
+            })
         })
+    }
+
+    fn push_id(s: &mut String, ch: char, v: u64) {
+        s.push(ch);
+        for i in (0..4).rev() {
+            let p = ((v & ((u16::MAX as u64) << (i*u16::BITS))) >> i*u16::BITS) as u32 + 0xE000;
+            s.push(unsafe { char::from_u32_unchecked(p) });
+        }
+    }
+    fn read_id(chars: &mut std::str::Chars) -> u64 {
+        let mut v = 0u64;
+        for _ in 0..4 {
+            v += chars.next().expect("End of cells") as u64 - 0xE000;
+            v <<= u16::BITS;
+        }
+        v
     }
 }
 impl fmt::Debug for CellRange {
@@ -376,7 +397,7 @@ impl fmt::Debug for CellRange {
     }
 }
 
-pub trait CellMap {
+pub trait CellGrid {
     fn get(&self, h: Hex) -> Cell;
 }
 
@@ -409,6 +430,7 @@ impl Area {
 pub struct SpawnBody {
     pub pid: ProgramId,
     pub to: Hex,
+    pub uid: UserId,
 }
 
 #[derive(Clone, Debug)]

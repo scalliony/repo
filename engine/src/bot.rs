@@ -1,163 +1,125 @@
 use std::fmt::Debug;
-
-use super::gen;
 use bulb::{
-    dto::{BotId, BotSrc, Cell, CellMap, ProgramId},
-    hex::{Direction, Hex},
+    dto::{BotSrc, Cell, ProgramId, CellGrid, UserId, Bytes, ObjId},
+    hex::{Direction, Hex, Angle},
 };
 use sys::wasm::{self, spec::StoreRef};
 use tracing::instrument;
 
 pub struct Bot {
-    pub program: ProgramId,
-    pub cpu: Result<Cpu, StateOff>,
+    process: wasm::Instance<Store>,
+    tick: wasm::Func<(), ()>,
+    program: ProgramId,
 }
 impl Bot {
-    pub fn at(&self) -> Hex {
-        match &self.cpu {
-            Ok(cpu) => cpu.state().at,
-            Err(off) => off.at,
-        }
-    }
-    pub fn src(&self, bid: BotId) -> BotSrc {
-        match &self.cpu {
-            Ok(cpu) => cpu.state().src(),
-            Err(off) => BotSrc { bid, at: off.at },
-        }
-    }
-}
-
-pub struct Cpu {
-    pub process: wasm::Instance<Store>,
-    tick: wasm::Func<(), ()>,
-}
-impl Cpu {
-    #[cold]
-    #[inline]
     #[instrument(level = "trace", skip_all)]
-    pub fn boot(
-        tpl: &mut Template,
+    pub fn new(
+        prg: &Program,
+        pid: ProgramId, 
         state: State,
         fuel: u64,
     ) -> Result<Self, (String, wasm::Error)> {
-        let (mut process, res) = wasm::Instance::started(tpl, state, fuel);
+        let (mut process, res) = wasm::Instance::started(&prg.tpl, state, fuel);
         if let Err(err) = res {
             return Err((process.store_mut().read_log(), err));
         }
         let tick = process.get_func::<(), ()>("tick").unwrap();
-        Ok(Self { process, tick })
+        Ok(Self { process, tick, program: pid })
+    }
+
+    #[inline]
+    pub fn process(&mut self) -> &mut wasm::Instance<Store> {
+        &mut self.process
     }
     #[inline]
     pub fn tick(&mut self) -> Result<(), wasm::Error> {
         self.process.call(&self.tick, ())
     }
     #[inline]
-    pub fn store(&self) -> &Store {
-        self.process.store()
-    }
-    #[inline]
-    pub fn store_mut(&mut self) -> &mut Store {
-        self.process.store_mut()
-    }
-    #[inline]
-    pub fn state(&self) -> &State {
-        self.process.state()
-    }
-    #[inline]
-    pub fn state_mut(&mut self) -> &mut State {
-        self.process.state_mut()
+    pub fn program(&self) -> ProgramId {
+        self.program
     }
 }
 
 /// Booted bot state
 pub struct State {
     /// Self id
-    pub id: BotId,
+    id: ObjId,
+    /// Owner UserId
+    owner: UserId,
     /// Position
-    pub at: Hex,
+    at: Hex,
     /// Front orientation
-    pub facing: Direction,
+    facing: Direction,
     /// Cell in facing direction
-    pub front: Cell,
+    front: Cell,
     /// Next action intent
     pub action: Action,
 }
 pub type Store = wasm::WasiStore<State>;
 impl State {
-    pub fn boot(id: BotId, off: &StateOff) -> Self {
-        Self {
-            id,
-            at: off.at,
-            facing: off.facing,
-            ..Default::default()
-        }
-    }
-    pub fn shutdown(&self, fuel: u64) -> StateOff {
-        StateOff {
-            at: self.at,
-            facing: self.facing,
-            fuel,
-        }
+    pub fn new(id: ObjId, owner: UserId, at: Hex, facing: Direction) -> Self {
+        Self { id, owner, at, facing, front: Cell::Ground, action: Action::default() }
     }
 
+    pub fn src(&self) -> BotSrc {
+        BotSrc { bid: self.id, at: self.at, uid: self.owner }
+    }
+    #[inline]
     pub fn at_front(&self) -> Hex {
         self.at + self.facing.into()
     }
-    pub fn src(&self) -> BotSrc {
-        BotSrc {
-            bid: self.id,
-            at: self.at,
-        }
+    #[inline]
+    pub fn set_at(&mut self, at: Hex) {
+        self.at = at
+    }
+    #[inline]
+    pub fn facing(&self) -> Direction {
+        self.facing
+    }
+    #[inline]
+    pub fn turn(&mut self, dir: Angle) -> Direction {
+        self.facing += dir;
+        self.facing
+    }
+    #[inline]
+    pub fn front(&self) -> Cell {
+        self.front
     }
 
-    pub fn update(&mut self, map: &impl CellMap) {
-        self.action = Self::default().action;
-        self.front = map.get(self.at_front());
-    }
-}
-impl Default for State {
-    //MAYBE: remove
-    fn default() -> Self {
-        Self {
-            id: u64::MAX.into(),
-            at: Hex::default(),
-            facing: Direction::Up,
-            front: Cell::Ground,
-            action: Action::Wait,
-        }
-    }
-}
-/// Stopped bot state
-pub struct StateOff {
-    pub at: Hex,
-    pub facing: Direction,
-    pub fuel: u64,
-}
-impl Debug for StateOff {
-    #[inline]
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("StateOff {{ ... }}")
+    pub fn update(&mut self, grid: &impl CellGrid) {
+        self.action = Action::default();
+        self.front = grid.get(self.at_front());
     }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Action {
     Wait,
-    //Sleep(u32)
     MotorForward,
     MotorLeft,
     MotorRight,
 }
-
-pub type Template = wasm::Template<Store>;
-
-impl From<gen::Id> for BotId {
-    fn from(id: gen::Id) -> Self {
-        Self::from(id.pack())
+impl Default for Action {
+    fn default() -> Self {
+        Self::Wait
     }
 }
-impl From<BotId> for gen::Id {
-    fn from(id: BotId) -> gen::Id {
-        gen::Id::new(id.into())
+
+pub struct Program {
+    tpl: wasm::Template<Store>,
+    code: Bytes,
+}
+impl Program {
+    #[instrument(level = "trace", skip_all)]
+    pub fn new(code: Bytes, vm: &VM) -> sys::Result<Self> {
+        let tpl = wasm::Template::new(vm, &code)?;
+        Ok(Self { tpl, code })
+    }
+    #[inline]
+    pub fn code(&self) -> &[u8] {
+        &self.code
     }
 }
+
+pub type VM = wasm::Linker<Store>;

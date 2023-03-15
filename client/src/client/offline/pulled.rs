@@ -7,7 +7,7 @@ use std::rc::Rc;
 type R = Box<dyn FnMut() -> Option<Command>>;
 type S = Box<dyn FnMut(Event)>;
 pub struct Client {
-    game: Game<R, S>,
+    game: GameState<R, S>,
     store: ClientStore,
     tick_acc_ms: f32,
     //TODO: move speed managment to bulb
@@ -21,7 +21,7 @@ impl Client {
         let sender = store.events.clone();
         let receive: R = Box::new(move || receiver.borrow_mut().pop_front());
         let send: S = Box::new(move |v: Event| sender.borrow_mut().push_back(v));
-        let game = Game::new(receive, send, false);
+        let game = GameState::new(receive, send, false);
 
         Self {
             game,

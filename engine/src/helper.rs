@@ -40,4 +40,9 @@ where
         self.game.tick();
         self.state
     }
+
+    #[inline]
+    pub fn state(&self) -> State {
+        self.state
+    }
 }

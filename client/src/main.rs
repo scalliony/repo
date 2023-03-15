@@ -36,6 +36,7 @@ async fn main() {
     let mut program: usize = 0;
     let mut spawn: Hex = Hex::default();
 
+    let mut event_buf = game::EventBuffer::default();
     let mut state = game::AnimatedState::default();
 
     let mut tick_duration: F = 1.;

@@ -11,6 +11,7 @@ pub struct Client {
     thread: Option<thread::JoinHandle<()>>,
     //TODO: move speed managment to bulb
     tick_ms: Arc<AtomicU64>,
+    state: State,
 }
 impl Client {
     pub fn new() -> Self {
@@ -27,6 +28,7 @@ impl Client {
             },
             false,
         );
+        let state = game.state();
 
         let thread_tick_ms = tick_ms.clone();
         let thread = thread::Builder::new()
@@ -41,13 +43,7 @@ impl Client {
             })
             .unwrap();
 
-        Self {
-            commands: commands_tx,
-            events_rx,
-            events_tx,
-            thread: Some(thread),
-            tick_ms,
-        }
+        Self { commands: commands_tx, events_rx, events_tx, thread: Some(thread), tick_ms, sttate }
     }
 }
 impl Drop for Client {
@@ -60,7 +56,11 @@ impl Drop for Client {
 impl super::super::Client for Client {
     #[inline]
     fn try_recv(&mut self) -> Option<Event> {
-        self.events_rx.try_recv().ok()
+        let e = self.events_rx.try_recv().ok();
+        if let Some(Event::StateChange(state)) = e {
+            self.state = state;
+        }
+        e
     }
     #[inline]
     fn send(&mut self, c: Rpc) {
@@ -93,5 +93,9 @@ impl super::super::Client for Client {
         } {
             _ = self.commands.send(cmd);
         }
+    }
+
+    fn state(&self) -> Option<State> {
+        Some(self.state)
     }
 }

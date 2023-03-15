@@ -51,14 +51,7 @@ impl<S: FnMut(Event)> Game<S> {
 
         for (id, bot) in self.bots.iter_mut() {
             //Process
-            Self::tick_bot(
-                id,
-                bot,
-                &mut self.programs,
-                &self.vm,
-                &self.map,
-                &mut self.events,
-            )
+            Self::tick_bot(id, bot, &self.grid, &mut self.events)
         }
         self.tick_act();
         self.tick_death();
@@ -74,34 +67,17 @@ impl<S: FnMut(Event)> Game<S> {
     fn tick_bot(
         id: BotId,
         bot: &mut Bot,
-        programs: &mut Programs,
-        vm: &VM,
-        map: &GameMap,
+        grid: &Grid,
         events: &mut EventSender<S>,
     ) {
+        bot.state_mut().update(grid);
         match bot.cpu.as_mut() {
-            Ok(cpu) => cpu.state_mut().update(map),
+            Ok(cpu) => cpu.state_mut().update(grid),
             Err(off) => {
                 off.fuel -= 1;
                 //TODO: if sleep return
                 if off.fuel < MIN_BOOT_FUEL {
                     return;
-                }
-
-                let mut state = bot::State::boot(id, off);
-                let src = state.src();
-                state.update(map);
-                let tpl = programs[bot.program].compiled(vm);
-                match bot::Cpu::boot(tpl.unwrap(), state, off.fuel) {
-                    Ok(cpu) => bot.cpu = Ok(cpu),
-                    Err((log, err)) => {
-                        events.log(src, log);
-                        events.send(BotError {
-                            src,
-                            err: err_wrap("During start", err),
-                        });
-                        return;
-                    }
                 }
             }
         }
@@ -127,103 +103,85 @@ impl<S: FnMut(Event)> Game<S> {
         self.cache.deaths.clear();
         for index in self.bots.iter_index() {
             if let Some((id, bot, others)) = self.bots.split_at_mut(index) {
-                let alive = match &mut bot.cpu {
-                    Ok(cpu) => {
-                        let src = cpu.state().src();
-                        let action = cpu.state().action;
-                        tracing::debug!(?src, ?action);
-                        use bot::Action::*;
-                        let mut _alive = cpu.process.fuel() > 0;
-                        let alive = &mut _alive;
-                        fn consume_fuel(cpu: &mut bot::Cpu, v: u64, alive: &mut bool) -> bool {
-                            match cpu.process.consume_fuel(v) {
-                                Ok(_) => true,
-                                Err(_) => {
-                                    *alive = false;
-                                    false
-                                }
-                            }
+                let src = bot.state().src();
+                let action = bot.state().action;
+                tracing::debug!(?src, ?action);
+                use bot::Action::*;
+                match action {
+                    //TODO: mine, attack, etc...
+                    MotorLeft => {
+                        if consume_fuel(bot, TURN_FUEL) {
+                            let dir = bot.state_mut().turn(Angle::Left);
+                            self.events.send(BotRotate { src, dir });
                         }
-                        match action {
-                            //TODO: mine, attack, etc...
-                            MotorLeft => {
-                                if consume_fuel(cpu, TURN_FUEL, alive) {
-                                    let state = cpu.state_mut();
-                                    state.facing += Angle::Left;
-                                    self.events.send(BotRotate {
-                                        src,
-                                        dir: state.facing,
-                                    });
-                                }
-                            }
-                            MotorRight => {
-                                if consume_fuel(cpu, TURN_FUEL, alive) {
-                                    let state = cpu.state_mut();
-                                    state.facing += Angle::Right;
-                                    self.events.send(BotRotate {
-                                        src,
-                                        dir: state.facing,
-                                    });
-                                }
-                            }
-                            MotorForward => {
-                                if consume_fuel(cpu, MOVE_FUEL, alive) {
-                                    use TryMoveState::*;
-                                    let state = cpu.state();
-                                    let to = state.at_front();
-                                    let mut mov = match self.map.get(to) {
-                                        Cell::Ground => Valid,
-                                        Cell::Bot(other_id) => {
-                                            // Assume other bot will move successfully
-                                            if let Ok(other) = &others.get(other_id).unwrap().cpu {
-                                                let other = other.state();
-                                                if other.action == MotorForward
-                                                // No passthrough swap
-                                                && other.facing != -state.facing
-                                                {
-                                                    After(other.at_front())
-                                                } else {
-                                                    Cancelled
-                                                }
-                                            } else {
-                                                Cancelled
-                                            }
-                                        }
-                                        Cell::Wall => Cancelled,
-                                    };
-                                    if mov.is_ok()
-                                        && !match self.cache.moves.get_mut(&to) {
-                                            Some(v) => {
-                                                if v.1.is_ok() {
-                                                    let other =
-                                                        others.get(v.0).unwrap().cpu.as_ref();
-                                                    let other = other.unwrap().state().src();
-                                                    self.events.send(BotCollide { src: other, to });
-                                                    v.1 = Cancelled;
-                                                }
-                                                false
-                                            }
-                                            None => true,
-                                        }
-                                    {
-                                        mov = Cancelled;
-                                    }
-                                    if mov.is_ok() {
-                                        self.cache.moves.insert(to, (id, mov));
-                                        //NOTE: Postponed
-                                    } else {
-                                        self.events.send(BotCollide { src, to });
-                                    }
-                                }
-                            }
-                            Wait => {}
-                        }
-                        *alive
                     }
-                    Err(off) => off.fuel > 0,
-                };
-                if !alive {
-                    self.cache.deaths.push(id);
+                    MotorRight => {
+                        if consume_fuel(bot, TURN_FUEL) {
+                            let dir = bot.state_mut().turn(Angle::Right);
+                            self.events.send(BotRotate { src, dir });
+                        }
+                    }
+                    MotorForward => {
+                        if consume_fuel(bot, MOVE_FUEL) {
+                            use TryMoveState::*;
+                            let state = bot.state();
+                            let to = state.at_front();
+                            let mut mov = match self.grid.get(to) {
+                                Cell::Ground => Valid,
+                                Cell::Bot(other_id) => {
+                                    // Assume other bot will move successfully
+                                    if let Ok(other) = &others.get(other_id).unwrap().cpu {
+                                        let other = other.state();
+                                        if other.action == MotorForward
+                                        // No passthrough swap
+                                        && other.facing() != -state.facing()
+                                        {
+                                            After(other.at_front())
+                                        } else {
+                                            Cancelled
+                                        }
+                                    } else {
+                                        Cancelled
+                                    }
+                                }
+                                Cell::Wall | Cell::Obj(_) => Cancelled,
+                            };
+                            if mov.is_ok()
+                                && !match self.cache.moves.get_mut(&to) {
+                                    Some(v) => {
+                                        if v.1.is_ok() {
+                                            let other =
+                                                others.get(v.0).unwrap().cpu.as_ref();
+                                            let other = other.unwrap().state().src();
+                                            self.events.send(BotCollide { src: other, to });
+                                            v.1 = Cancelled;
+                                        }
+                                        false
+                                    }
+                                    None => true,
+                                }
+                            {
+                                mov = Cancelled;
+                            }
+                            if mov.is_ok() {
+                                self.cache.moves.insert(to, (id, mov));
+                                //NOTE: Postponed
+                            } else {
+                                self.events.send(BotCollide { src, to });
+                            }
+                        }
+                    }
+                    Wait => {}
+                }
+                fn consume_fuel(bot: &mut Bot, v: u64) -> bool {
+                    let p = bot.process();
+                    match p.consume_fuel(v) {
+                        Ok(_) => true,
+                        Err(_) => {
+                            _ = p.consume_fuel(p.fuel());
+                            false
+                        }
+                    }
                 }
             }
         }
@@ -392,6 +350,59 @@ impl<S: FnMut(Event)> Game<S> {
                     src: BotSrc { bid, at },
                 });
             }
+            Command::UserByLogin(login, cb) => {
+                cb.resolve(self.users.by_login(&login).map(|(id, data)| UserInfo {
+                    id,
+                    name: data.name,
+                    spawn: data.spawn,
+                }))
+            }
+            Command::UserSpawn { login, name, cb } => {
+                self.with_tick();
+                if let Some((uid, user)) = self.users.by_login(&login) {
+                    self.bots.retain(|bid, bot| {
+                        let src = bot.src(bid);
+                        let retain = src.uid != uid;
+                        if !retain {
+                            self.map.set(src.at, Cell::Ground);
+                            self.events.send(BotDie { src })
+                        }
+                        retain
+                    });
+                }
+
+                const BASE_DIST: bulb::hex::I = 512;
+                const MIN_AREA: usize = 262144;
+                let spawn = (1..).find_map(|ring| Hex::default().ring(ring).map(|h| h * BASE_DIST).find_map(|spawn| {
+                    if self.map.get(spawn) != Cell::Ground {
+                        return None
+                    }
+                    let close = std::collections::HashSet::from([spawn]);
+                    let queue = std::collections::VecDeque::from([spawn]);
+                    let mut popped = 0usize;
+                    while let Some(h) = queue.pop_front() {
+                        popped += 1;
+                        for d in bulb::hex::Direction::all() {
+                            let n = h.neighbor(*d);
+                            if close.insert(n) {
+                                match self.map.get(n) {
+                                    Cell::Bot(_) => return None,
+                                    Cell::Ground => queue.push_back(n),
+                                    _ => {}
+                                }
+                            }
+                        }
+                        if queue.len() + popped > MIN_AREA {
+                            return Some(spawn)
+                        }
+                    }
+                    None
+                })).expect("Map is full");
+
+                let uid = self.users.set(user::User::new(login, name, spawn));
+                //FIXME: add factory
+                cb.resolve((uid, spawn))
+            },
             Command::ChangeState(_) => unreachable!("Server command"),
         }
     }
@@ -412,65 +423,12 @@ impl<S: FnMut(Event)> Game<S> {
     }
 }
 
-type Bots = gen::Array<BotId, Bot>;
-
-struct GameMap {
-    pub grid: BTreeMap<Hex, Cell>,
-    pub gen: MapGenerator,
-}
-impl GameMap {
-    fn new(seed: u32) -> Self {
-        Self {
-            grid: BTreeMap::new(),
-            gen: MapGenerator::new(seed),
-        }
-    }
-    fn set(&mut self, h: Hex, v: Cell) {
-        self.grid.insert(h, v);
-    }
-    fn drain_unchanged(&mut self) {
-        self.grid.retain(|h, v| *v != self.gen.get(*h));
-    }
-}
-impl CellMap for GameMap {
-    fn get(&self, h: Hex) -> Cell {
-        if let Some(v) = self.grid.get(&h) {
-            *v
-        } else {
-            self.gen.get(h)
-        }
-    }
-}
-struct MapGenerator(noise::Fbm<noise::OpenSimplex>);
-impl MapGenerator {
-    fn new(seed: u32) -> Self {
-        use noise::Seedable;
-        let mut noise = noise::Fbm::new_seed(seed);
-        noise.frequency = 1. / 256.;
-        Self(noise)
-    }
-    fn get(&self, h: Hex) -> Cell {
-        use noise::NoiseFn;
-        let p = bulb::hex::Point::from(h);
-        let height = self.0.get([p.x, p.y]);
-        if height < 0. {
-            Cell::Ground
-        } else {
-            Cell::Wall
-        }
-    }
-}
-
-struct GameCache {
+struct Cache {
     moves: HashMap<Hex, (BotId, TryMoveState)>,
-    deaths: Vec<BotId>,
 }
-impl GameCache {
+impl Cache {
     fn new() -> Self {
-        Self {
-            moves: HashMap::new(),
-            deaths: Vec::new(),
-        }
+        Self { moves: HashMap::new() }
     }
 }
 #[derive(Clone, Copy, PartialEq)]
@@ -500,34 +458,5 @@ impl<S: FnMut(Event)> EventSender<S> {
                 msg: log.into(),
             })
         }
-    }
-}
-
-type Programs = TiVec<ProgramId, Program>;
-struct Program {
-    inner: Option<bot::Template>,
-    code: Bytes,
-}
-impl Program {
-    fn new(code: Bytes, vm: &VM) -> Result<Self> {
-        let mut s = Self { inner: None, code };
-        s.compile(vm)?;
-        Ok(s)
-    }
-
-    fn compiled(&mut self, vm: &VM) -> Result<&mut bot::Template> {
-        if self.inner.is_none() {
-            self.compile(vm)?;
-        }
-        Ok(self.inner.as_mut().unwrap())
-    }
-    #[cold]
-    #[inline]
-    #[instrument(level = "trace", skip_all)]
-    fn compile(&mut self, vm: &VM) -> Result<()> {
-        debug_assert!(self.inner.is_none());
-        let tpl = bot::Template::new(vm, &self.code)?;
-        self.inner = Some(tpl);
-        Ok(())
     }
 }
